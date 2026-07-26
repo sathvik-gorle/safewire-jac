@@ -1,0 +1,18 @@
+# Jac generated runtime, database, and dependency files
+/.jac/
+/.venv/
+/node_modules/
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Test and editor output
+/coverage/
+/.pytest_cache/
+/.mypy_cache/
+.DS_Store
+*.log
+*.pyc
+__pycache__/
