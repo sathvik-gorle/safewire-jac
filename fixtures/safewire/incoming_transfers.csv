@@ -1,0 +1,7 @@
+transfer_id,customer_id,customer_name,customer_age,source_account_id,recipient_account_id,recipient_name,amount,created_at,note,invoice_id
+TX-RUTH-4800,CUST-RUTH,Ruth Bennett,76,ACC-RUTH-CHECKING,ACC-RAVEN-001,Raven Ridge Services,4800,2026-07-24T09:14:00Z,"He said I must send it today and keep this secret or my grandson will be arrested.",
+TX-JUNE-4725,CUST-JUNE,June Wallace,81,ACC-JUNE-CHECKING,ACC-RAVEN-001,Raven Ridge Services,4725,2026-07-23T13:05:00Z,"Family emergency payment",
+TX-ARTHUR-4950,CUST-ARTHUR,Arthur Delgado,79,ACC-ARTHUR-CHECKING,ACC-RAVEN-001,Raven Ridge Services,4950,2026-07-23T16:42:00Z,"Urgent family matter",
+TX-HELEN-4650,CUST-HELEN,Helen Brooks,74,ACC-HELEN-CHECKING,ACC-RAVEN-002,Raven Ridge Services,4650,2026-07-24T07:31:00Z,"Personal transfer",
+TX-SAMUEL-5100,CUST-SAMUEL,Samuel Greene,83,ACC-SAMUEL-CHECKING,ACC-RAVEN-002,Raven Ridge Services,5100,2026-07-24T08:48:00Z,"Family assistance",
+TX-HAROLD-5200,CUST-HAROLD,Harold Kim,72,ACC-HAROLD-CHECKING,ACC-BAYVIEW-001,Bayview Roofing LLC,5200,2026-07-24T10:22:00Z,"Deposit for roof replacement under invoice INV-8842",INV-8842

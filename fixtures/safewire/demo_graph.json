@@ -1,0 +1,102 @@
+{
+  "snapshot_date": "2026-07-24",
+  "synthetic": true,
+  "customers": [
+    {"key": "CUST-RUTH", "name": "Ruth Bennett", "age": 76, "verified_phone": "***-***-0142"},
+    {"key": "CUST-JUNE", "name": "June Wallace", "age": 81, "verified_phone": "***-***-6610"},
+    {"key": "CUST-ARTHUR", "name": "Arthur Delgado", "age": 79, "verified_phone": "***-***-2098"},
+    {"key": "CUST-HELEN", "name": "Helen Brooks", "age": 74, "verified_phone": "***-***-3184"},
+    {"key": "CUST-SAMUEL", "name": "Samuel Greene", "age": 83, "verified_phone": "***-***-7752"},
+    {"key": "CUST-HAROLD", "name": "Harold Kim", "age": 72, "verified_phone": "***-***-8804"}
+  ],
+  "accounts": [
+    {"key": "ACC-RUTH-CHECKING", "label": "Ruth · Everyday Checking", "kind": "customer", "normal_transfer_amount": 533.33, "established_since": "1998-04-12"},
+    {"key": "ACC-JUNE-CHECKING", "label": "June · Checking", "kind": "customer", "normal_transfer_amount": 420.00, "established_since": "2001-06-09"},
+    {"key": "ACC-ARTHUR-CHECKING", "label": "Arthur · Checking", "kind": "customer", "normal_transfer_amount": 610.00, "established_since": "1994-02-17"},
+    {"key": "ACC-HELEN-CHECKING", "label": "Helen · Checking", "kind": "customer", "normal_transfer_amount": 385.00, "established_since": "2008-11-03"},
+    {"key": "ACC-SAMUEL-CHECKING", "label": "Samuel · Checking", "kind": "customer", "normal_transfer_amount": 570.00, "established_since": "1990-08-21"},
+    {"key": "ACC-HAROLD-CHECKING", "label": "Harold · Everyday Checking", "kind": "customer", "normal_transfer_amount": 1200.00, "established_since": "1997-09-16"},
+    {"key": "ACC-RAVEN-001", "label": "Raven Ridge · Operating 4419", "kind": "recipient", "normal_transfer_amount": 0, "established_since": "2026-07-02"},
+    {"key": "ACC-RAVEN-002", "label": "Raven Ridge · Settlement 8302", "kind": "recipient", "normal_transfer_amount": 0, "established_since": "2026-07-05"},
+    {"key": "ACC-BAYVIEW-001", "label": "Bayview Roofing · Business 2001", "kind": "merchant", "normal_transfer_amount": 0, "established_since": "2012-03-18"}
+  ],
+  "transfers": [
+    {"key": "TX-RUTH-4800", "amount": 4800, "created_at": "2026-07-24T09:14:00Z", "note": "He said I must send it today and keep this secret or my grandson will be arrested.", "invoice_id": "", "first_time_payee": true, "legacy_score": 24},
+    {"key": "TX-JUNE-4725", "amount": 4725, "created_at": "2026-07-23T13:05:00Z", "note": "Family emergency payment", "invoice_id": "", "first_time_payee": true, "legacy_score": 21},
+    {"key": "TX-ARTHUR-4950", "amount": 4950, "created_at": "2026-07-23T16:42:00Z", "note": "Urgent family matter", "invoice_id": "", "first_time_payee": true, "legacy_score": 23},
+    {"key": "TX-HELEN-4650", "amount": 4650, "created_at": "2026-07-24T07:31:00Z", "note": "Personal transfer", "invoice_id": "", "first_time_payee": true, "legacy_score": 20},
+    {"key": "TX-SAMUEL-5100", "amount": 5100, "created_at": "2026-07-24T08:48:00Z", "note": "Family assistance", "invoice_id": "", "first_time_payee": true, "legacy_score": 25},
+    {"key": "TX-HAROLD-5200", "amount": 5200, "created_at": "2026-07-24T10:22:00Z", "note": "Deposit for roof replacement under invoice INV-8842", "invoice_id": "INV-8842", "first_time_payee": false, "legacy_score": 18},
+    {"key": "TX-RUTH-FORWARD-1", "amount": 3936, "created_at": "2026-07-24T09:25:00Z", "note": "Settlement", "invoice_id": "", "first_time_payee": false, "legacy_score": 0},
+    {"key": "TX-JUNE-FORWARD-1", "amount": 3874.50, "created_at": "2026-07-23T13:17:00Z", "note": "Settlement", "invoice_id": "", "first_time_payee": false, "legacy_score": 0}
+  ],
+  "payees": [
+    {"key": "PAYEE-RAVEN", "name": "Raven Ridge Services", "kind": "new recipient"},
+    {"key": "PAYEE-BAYVIEW", "name": "Bayview Roofing LLC", "kind": "established merchant"}
+  ],
+  "devices": [
+    {"key": "DEV-RAVEN-7", "label": "Android · fingerprint 7D91", "risk": "shared"},
+    {"key": "DEV-RUTH-1", "label": "Ruth's iPad", "risk": "known"},
+    {"key": "DEV-BAYVIEW-2", "label": "Bayview office workstation", "risk": "known"}
+  ],
+  "ip_addresses": [
+    {"key": "IP-RAVEN-185", "address": "198.51.100.185", "location": "Hosting provider · synthetic"},
+    {"key": "IP-RUTH-44", "address": "192.0.2.44", "location": "Known home network · synthetic"},
+    {"key": "IP-BAYVIEW-28", "address": "192.0.2.28", "location": "Known business network · synthetic"}
+  ],
+  "authorized_users": [
+    {"key": "AUTH-MIA-COLE", "name": "Mia Cole"},
+    {"key": "AUTH-CASEY-DRAKE", "name": "Casey Drake"},
+    {"key": "AUTH-BAYVIEW", "name": "Bayview Roofing LLC"}
+  ],
+  "merchants": [
+    {"key": "MERCHANT-ARCLIGHT", "name": "ArcLight Digital Assets", "category": "crypto_off_ramp", "established_since": "2026-05-08", "verified": false},
+    {"key": "MERCHANT-BAYVIEW", "name": "Bayview Roofing LLC", "category": "roofing_contractor", "established_since": "2012-03-18", "verified": true}
+  ],
+  "cases": [
+    {"key": "CASE-RUTH-4800", "title": "Ruth Bennett · $4,800", "transfer_id": "TX-RUTH-4800", "subject": "Ruth Bennett", "legacy_score": 24, "legacy_decision": "Allow", "status": "ready"},
+    {"key": "CASE-HAROLD-5200", "title": "Harold Kim · $5,200", "transfer_id": "TX-HAROLD-5200", "subject": "Harold Kim", "legacy_score": 18, "legacy_decision": "Allow", "status": "ready"},
+    {"key": "CASE-2026-041", "title": "Confirmed impersonation ring", "transfer_id": "TX-CONFIRMED-041", "subject": "Prior confirmed case", "legacy_score": 91, "legacy_decision": "Escalated", "status": "confirmed_scam"}
+  ],
+  "relationships": [
+    {"kind": "OWNS", "from": "CUST-RUTH", "to": "ACC-RUTH-CHECKING"},
+    {"kind": "OWNS", "from": "CUST-JUNE", "to": "ACC-JUNE-CHECKING"},
+    {"kind": "OWNS", "from": "CUST-ARTHUR", "to": "ACC-ARTHUR-CHECKING"},
+    {"kind": "OWNS", "from": "CUST-HELEN", "to": "ACC-HELEN-CHECKING"},
+    {"kind": "OWNS", "from": "CUST-SAMUEL", "to": "ACC-SAMUEL-CHECKING"},
+    {"kind": "OWNS", "from": "CUST-HAROLD", "to": "ACC-HAROLD-CHECKING"},
+    {"kind": "SENT", "from": "ACC-RUTH-CHECKING", "to": "TX-RUTH-4800"},
+    {"kind": "SENT", "from": "ACC-JUNE-CHECKING", "to": "TX-JUNE-4725"},
+    {"kind": "SENT", "from": "ACC-ARTHUR-CHECKING", "to": "TX-ARTHUR-4950"},
+    {"kind": "SENT", "from": "ACC-HELEN-CHECKING", "to": "TX-HELEN-4650"},
+    {"kind": "SENT", "from": "ACC-SAMUEL-CHECKING", "to": "TX-SAMUEL-5100"},
+    {"kind": "SENT", "from": "ACC-HAROLD-CHECKING", "to": "TX-HAROLD-5200"},
+    {"kind": "RECEIVED", "from": "TX-RUTH-4800", "to": "ACC-RAVEN-001"},
+    {"kind": "RECEIVED", "from": "TX-JUNE-4725", "to": "ACC-RAVEN-001"},
+    {"kind": "RECEIVED", "from": "TX-ARTHUR-4950", "to": "ACC-RAVEN-001"},
+    {"kind": "RECEIVED", "from": "TX-HELEN-4650", "to": "ACC-RAVEN-002"},
+    {"kind": "RECEIVED", "from": "TX-SAMUEL-5100", "to": "ACC-RAVEN-002"},
+    {"kind": "RECEIVED", "from": "TX-HAROLD-5200", "to": "ACC-BAYVIEW-001"},
+    {"kind": "RECEIVED", "from": "TX-RUTH-4800", "to": "PAYEE-RAVEN"},
+    {"kind": "RECEIVED", "from": "TX-HAROLD-5200", "to": "PAYEE-BAYVIEW"},
+    {"kind": "FORWARDED_TO", "from": "TX-RUTH-4800", "to": "TX-RUTH-FORWARD-1"},
+    {"kind": "FORWARDED_TO", "from": "TX-JUNE-4725", "to": "TX-JUNE-FORWARD-1"},
+    {"kind": "RECEIVED", "from": "TX-RUTH-FORWARD-1", "to": "MERCHANT-ARCLIGHT"},
+    {"kind": "RECEIVED", "from": "TX-JUNE-FORWARD-1", "to": "MERCHANT-ARCLIGHT"},
+    {"kind": "RECEIVED", "from": "TX-HAROLD-5200", "to": "MERCHANT-BAYVIEW"},
+    {"kind": "USES_DEVICE", "from": "ACC-RAVEN-001", "to": "DEV-RAVEN-7"},
+    {"kind": "USES_DEVICE", "from": "ACC-RAVEN-002", "to": "DEV-RAVEN-7"},
+    {"kind": "USES_DEVICE", "from": "ACC-RUTH-CHECKING", "to": "DEV-RUTH-1"},
+    {"kind": "USES_DEVICE", "from": "ACC-BAYVIEW-001", "to": "DEV-BAYVIEW-2"},
+    {"kind": "CONNECTS_FROM", "from": "DEV-RAVEN-7", "to": "IP-RAVEN-185"},
+    {"kind": "CONNECTS_FROM", "from": "DEV-RUTH-1", "to": "IP-RUTH-44"},
+    {"kind": "CONNECTS_FROM", "from": "DEV-BAYVIEW-2", "to": "IP-BAYVIEW-28"},
+    {"kind": "AUTHORIZED_ON", "from": "AUTH-MIA-COLE", "to": "ACC-RAVEN-001"},
+    {"kind": "AUTHORIZED_ON", "from": "AUTH-CASEY-DRAKE", "to": "ACC-RAVEN-002"},
+    {"kind": "AUTHORIZED_ON", "from": "AUTH-BAYVIEW", "to": "ACC-BAYVIEW-001"},
+    {"kind": "SHARES_IDENTITY_WITH", "from": "ACC-RAVEN-001", "to": "ACC-RAVEN-002"},
+    {"kind": "INCLUDED_IN_CASE", "from": "ACC-RAVEN-001", "to": "CASE-2026-041"},
+    {"kind": "INCLUDED_IN_CASE", "from": "TX-RUTH-4800", "to": "CASE-RUTH-4800"},
+    {"kind": "INCLUDED_IN_CASE", "from": "TX-HAROLD-5200", "to": "CASE-HAROLD-5200"}
+  ]
+}

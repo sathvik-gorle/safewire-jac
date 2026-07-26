@@ -1,7 +1,7 @@
 [project]
-name = "meridian-jac"
+name = "safewire-jac"
 version = "0.1.0"
-description = "Jac-native parallel diligence mesh with explainable evidence graphs"
+description = "Graph-native elder-scam intervention for community-bank analysts"
 entry-point = "main.jac"
 kind = "fullstack"
 

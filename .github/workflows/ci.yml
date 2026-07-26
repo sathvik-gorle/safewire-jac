@@ -1,4 +1,4 @@
-name: Meridian CI
+name: SafeWire CI
 
 on:
   push:
@@ -17,5 +17,5 @@ jobs:
       - run: pip install -r requirements.txt
       - run: jac install
       - run: jac check -p -n main.jac endpoints.sv.jac frontend.cl.jac
-      - run: jac test test_meridian.jac
+      - run: jac test test_safewire.jac
       - run: bash scripts/check_jac_share.sh

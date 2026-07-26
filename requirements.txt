@@ -1,5 +1,4 @@
 jaclang==0.16.7
 jac-client==0.3.25
 byllm==0.6.19
-httpx==0.28.1
 watchdog==6.0.0
