@@ -137,22 +137,4 @@ The main typed views are `CommandCenterBundle`, `CaseDetail`,
 `InvestigatorResult`, `GraphNodeView`, `GraphEdgeView`,
 `InvestigationEvent`, and `CapabilityView`.
 
-## Verify
 
-```bash
-jac check -p -n main.jac endpoints.sv.jac frontend.cl.jac
-jac test test_safewire.jac
-bash scripts/check_jac_share.sh
-```
-
-CI runs the same checks. The source-share guard fails unless Jac remains more
-than 50% of implementation source bytes.
-
-## Synthetic-data and safety notice
-
-All names, accounts, addresses, devices, infrastructure, case identifiers, call
-notes, transactions, and evidence in this repository are fictional
-demonstration fixtures. SafeWire is analyst decision support, not an autonomous
-banking-control system.
-
-See [UPSTREAM.md](UPSTREAM.md) for snapshot provenance.
