@@ -1,82 +1,129 @@
-"""Meridian client: institutional diligence workspace."""
+"""SafeWire Elder Scam Command Center client."""
 
 sv import from endpoints {
-    Entity,
-    Attribute,
-    RiskSignal,
-    SubEntity,
-    Report,
-    BatchBundle,
-    EntityDetail,
+    Customer,
+    Account,
+    Transfer,
+    ScamSignal,
+    InvestigationCase,
+    EvidenceSpan,
+    GraphNodeView,
+    GraphEdgeView,
     CapabilityView,
-    CreateDemoBatch,
-    CreateCsvBatch,
-    Orchestrator,
-    GetBatch,
-    GetEntityDetail,
+    CaseSummary,
+    CommandCenterBundle,
+    CaseDetail,
+    ImportResult,
+    AnalystDecisionView,
+    CreateDemoWorkspace,
+    ImportTransferCsv,
+    GetCommandCenter,
+    GetCaseDetail,
     GetCapabilities,
+    RecordAnalystDecision,
     ResetWorkspace
 }
 
 import from "lucide-react" {
     Activity,
-    ArrowUpRight,
+    AlertTriangle,
+    ArrowRight,
+    BadgeCheck,
     Check,
+    CheckCircle2,
     ChevronRight,
-    CircleAlert,
+    CircleDot,
+    Clock3,
     Database,
     Download,
-    ExternalLink,
-    FileSearch,
+    FileCheck2,
     FileText,
     GitBranch,
+    Info,
+    Network,
+    PhoneCall,
     Play,
     RefreshCw,
     Search,
-    ShieldCheck,
+    Shield,
+    ShieldAlert,
     Sparkles,
     Upload,
-    X
+    UserCheck,
+    XCircle,
+    Zap
 }
 
 cl import ".styles.css";
 
 
-def risk_class(score: float) -> str {
-    if score >= 70.0 {
-        return "risk-critical";
-    }
-    if score >= 50.0 {
-        return "risk-high";
-    }
-    if score >= 30.0 {
-        return "risk-medium";
-    }
-    return "risk-low";
+def money(value: float) -> str {
+    return "$" + value.toLocaleString(
+        "en-US",
+        {"minimumFractionDigits": 0, "maximumFractionDigits": 0}
+    );
 }
 
-def status_label(status: str) -> str {
-    labels = {
-        "pending": "Queued",
-        "researching": "Researching",
-        "scoring": "Scoring",
-        "done": "Reviewed",
-        "flagged": "Flagged",
-        "partial": "Partial",
-        "failed": "Failed"
-    };
-    return labels.get(status, status);
+def score_tone(score: int) -> str {
+    if score >= 70 {
+        return "critical";
+    }
+    if score >= 50 {
+        return "high";
+    }
+    if score >= 30 {
+        return "medium";
+    }
+    return "low";
 }
 
-def signal_label(category: str) -> str {
+def short_worker(name: str) -> str {
     labels = {
-        "rating_action": "Credit rating changes",
-        "yield_deviation": "Borrowing cost vs peers",
-        "litigation": "Legal exposure",
-        "covenant_strength": "Lender protections",
-        "disclosure_gap": "Missing disclosures"
+        "BehaviorBaselineWalker": "Behavior baseline",
+        "RecipientNetworkWalker": "Recipient network",
+        "MoneyFlowWalker": "Money flow",
+        "IdentityLinkWalker": "Identity links",
+        "ScamContextWalker": "Scam context",
+        "SkepticWalker": "Skeptic review",
+        "InterventionWalker": "Intervention"
     };
-    return labels.get(category, category.replace("_", " "));
+    return labels.get(name, name.replace("Walker", ""));
+}
+
+def worker_path(name: str) -> str {
+    labels = {
+        "BehaviorBaselineWalker": "Customer → Account → Transfer history",
+        "RecipientNetworkWalker": "Transfer → Recipient → Peer senders",
+        "MoneyFlowWalker": "Transfer → Downstream → Merchant",
+        "IdentityLinkWalker": "Account → Device → IP",
+        "ScamContextWalker": "Transfer → supplied call note",
+        "SkepticWalker": "Invoice → relationship → merchant",
+        "InterventionWalker": "Signals → policy → case"
+    };
+    return labels.get(name, "Graph traversal");
+}
+
+def signal_plain_language(category: str) -> str {
+    labels = {
+        "behavior_anomaly": "Is this unlike the customer's normal behavior?",
+        "recipient_network": "Are other older customers paying the same network?",
+        "rapid_money_flow": "Does the money move out too quickly to recover?",
+        "shared_identity": "Do supposedly separate accounts share devices or IPs?",
+        "scam_context": "Does the customer's own note show coercion?"
+    };
+    return labels.get(category, "Independent fraud-risk category");
+}
+
+def find_view_node(
+    views: list[GraphNodeView],
+    node_id: str
+) -> GraphNodeView | None {
+    for view_node in views {
+        if view_node.id == node_id {
+            return view_node;
+        }
+    }
+    return None;
 }
 
 def csv_escape(value: str) -> str {
@@ -85,172 +132,327 @@ def csv_escape(value: str) -> str {
 
 
 def:pub app -> JsxElement {
-    has bundle: BatchBundle | None = None,
-        capabilities: CapabilityView | None = None,
-        selected: EntityDetail | None = None,
-        activeView: str = "workspace",
-        runMode: str = "demo",
-        isRunning: bool = False,
+    has bundle: CommandCenterBundle | None = None,
+        detail: CaseDetail | None = None,
+        selectedCaseKey: str = "CASE-RUTH-4800",
+        selectedNodeId: str = "",
+        graphNodes: list[GraphNodeView] = [],
+        graphEdges: list[GraphEdgeView] = [],
+        workerStates: dict[str, str] = {},
+        workerMessages: dict[str, str] = {},
         isLoading: bool = True,
-        elapsedSeconds: int = 0,
-        runMessage: str = "",
-        uploadError: str = "",
-        searchQuery: str = "";
+        isRunning: bool = False,
+        runMode: str = "synthetic",
+        runMessage: str = "Ready to trace the transfer graph",
+        activeTab: str = "signals",
+        activeView: str = "investigation",
+        searchQuery: str = "",
+        uploadMessage: str = "",
+        analystNote: str = "",
+        actionMessage: str = "";
 
     async can with entry {
         try {
-            capResult = root spawn GetCapabilities();
-            capabilities = capResult.reports[0] if capResult.reports else None;
-            setupResult = root spawn CreateDemoBatch(
+            setup = root spawn CreateDemoWorkspace(
                 request_id=str(Date.now())
             );
-            initialBundle = (
-                setupResult.reports[0] if setupResult.reports else None
-            );
-            bundle = initialBundle;
-            if initialBundle and initialBundle.entities {
-                await selectEntity(initialBundle.entities[0].key);
-            }
+            bundle = setup.reports[0] if setup.reports else None;
+            await selectCase("CASE-RUTH-4800");
         } except Exception as error {
-            runMessage = f"Could not initialize Meridian: {error}";
+            runMessage = f"Could not open SafeWire: {error}";
         }
         isLoading = False;
     }
 
-    async def runResearch {
-        if isRunning {
+    def initialWorkerStates(caseDetail: CaseDetail) -> dict[str, str] {
+        states: dict[str, str] = {};
+        for name in caseDetail.worker_names {
+            states[name] = (
+                "completed"
+                if caseDetail.case_node.status == "completed"
+                else "pending"
+            );
+        }
+        return states;
+    }
+
+    async def refreshBundle {
+        response = root spawn GetCommandCenter(
+            request_id=str(Date.now())
+        );
+        bundle = response.reports[0] if response.reports else bundle;
+    }
+
+    async def selectCase(caseKey: str) {
+        selectedCaseKey = caseKey;
+        selectedNodeId = "";
+        activeTab = "signals";
+        response = root spawn GetCaseDetail(
+            case_key=caseKey,
+            request_id=str(Date.now())
+        );
+        nextDetail = response.reports[0] if response.reports else None;
+        detail = nextDetail;
+        if nextDetail {
+            if nextDetail.case_node.status == "completed" {
+                graphNodes = nextDetail.graph_nodes;
+                graphEdges = nextDetail.graph_edges;
+            } else {
+                graphNodes = nextDetail.graph_nodes[:3];
+                graphEdges = nextDetail.graph_edges[:2];
+            }
+            workerStates = initialWorkerStates(nextDetail);
+            workerMessages = {};
+            runMessage = (
+                "Persisted investigation restored"
+                if nextDetail.case_node.status == "completed"
+                else "Ready to trace the transfer graph"
+            );
+        }
+    }
+
+    def mergeNodes(incoming: list[GraphNodeView]) {
+        merged = list(graphNodes);
+        known = set([view_node.id for view_node in merged]);
+        for view_node in incoming {
+            if view_node.id not in known {
+                merged.append(view_node);
+                known.add(view_node.id);
+            }
+        }
+        graphNodes = merged;
+    }
+
+    def mergeEdges(incoming: list[GraphEdgeView]) {
+        merged = list(graphEdges);
+        known = set([view_edge.id for view_edge in merged]);
+        for view_edge in incoming {
+            if view_edge.id not in known {
+                merged.append(view_edge);
+                known.add(view_edge.id);
+            }
+        }
+        graphEdges = merged;
+    }
+
+    def hydrateNodes(rows: list) -> list {
+        # SSE data is already a serialized GraphNodeView. Keeping the browser's
+        # plain objects avoids treating a typed server view constructor as an
+        # authenticated remote function.
+        return rows;
+    }
+
+    def hydrateEdges(rows: list) -> list {
+        # See hydrateNodes: graph deltas arrive in the exact public-view shape.
+        return rows;
+    }
+
+    def updateWorker(name: str, state: str, message: str = "") {
+        states = {**workerStates};
+        states[name] = state;
+        workerStates = states;
+        if message {
+            messages = {**workerMessages};
+            messages[name] = message;
+            workerMessages = messages;
+        }
+    }
+
+    async def runInvestigation {
+        if isRunning or not detail {
             return;
         }
         isRunning = True;
-        elapsedSeconds = 0;
-        runMessage = (
-            "Launching live Tavily + byLLM research"
-            if runMode == "live"
-            else "Launching eight concurrent Jac research workers"
+        actionMessage = "";
+        runMessage = "Launching five read-only Jac graph traversals…";
+        states: dict[str, str] = {};
+        for name in detail.worker_names {
+            states[name] = "pending";
+        }
+        workerStates = states;
+        workerMessages = {};
+        graphNodes = detail.graph_nodes[:3];
+        graphEdges = detail.graph_edges[:2];
+        requestId = (
+            "run-" + detail.transfer.key + "-" + str(Date.now())
         );
-        if bundle {
-            for entity in bundle.entities {
-                entity.status = "researching";
-            }
-        }
-        intervalHandle = setInterval(lambda {
-            elapsedSeconds = elapsedSeconds + 1;
-        }, 1000);
         try {
-            # Re-establish the persistent demo batch after a backend restart while
-            # preserving an existing demo or CSV batch when one is available.
-            root spawn CreateDemoBatch(request_id=str(Date.now()));
-            response = root spawn Orchestrator(
-                mode=runMode,
-                request_id=str(Date.now())
-            );
-            completedBundle = (
-                response.reports[0] if response.reports else None
-            );
-            if not completedBundle {
-                currentResponse = root spawn GetBatch(
-                    request_id=str(Date.now())
-                );
-                completedBundle = (
-                    currentResponse.reports[0]
-                    if currentResponse.reports
-                    else None
-                );
+            response = await fetch("/function/investigate_transfer_stream", {
+                "method": "POST",
+                "headers": {"Content-Type": "application/json"},
+                "body": JSON.stringify({
+                    "transfer_id": detail.transfer.key,
+                    "mode": runMode,
+                    "request_id": requestId
+                })
+            });
+            if not response.ok {
+                raise Error("Streaming endpoint returned " + str(response.status));
             }
-            if not completedBundle {
-                # A long-lived browser tab can outlast its development backend.
-                # Rebuild the demo graph once so Run remains a one-click action.
-                root spawn ResetWorkspace(request_id=str(Date.now()));
-                root spawn CreateDemoBatch(
-                    force=True,
-                    request_id=str(Date.now())
-                );
-                recoveryResponse = root spawn Orchestrator(
-                    mode=runMode,
-                    request_id=str(Date.now())
-                );
-                completedBundle = (
-                    recoveryResponse.reports[0]
-                    if recoveryResponse.reports
-                    else None
-                );
-            }
-            if completedBundle {
-                bundle = completedBundle;
-                runMessage = completedBundle.message;
-                if completedBundle.entities {
-                    await selectEntity(completedBundle.entities[0].key);
+            reader = response.body.getReader();
+            decoder = new(TextDecoder);
+            nl = chr(10);
+            buffer = "";
+            reading = True;
+            while reading {
+                part = await reader.read();
+                if part.done {
+                    reading = False;
+                    continue;
                 }
-            } else {
-                runMessage = "No active diligence batch was returned";
+                buffer = buffer + decoder.decode(
+                    part.value,
+                    {"stream": True}
+                );
+                frames = buffer.split(nl + nl);
+                buffer = frames.pop();
+                for frame in frames {
+                    if frame.startswith("event: end") {
+                        reading = False;
+                        await reader.cancel();
+                        continue;
+                    }
+                    for line in frame.split(nl) {
+                        if (
+                            line.startswith("data: ")
+                            and not frame.startswith("event:")
+                        ) {
+                            encoded = JSON.parse(line[6:]);
+                            payload = JSON.parse(encoded);
+                            eventName = str(payload.event);
+                            investigator = str(payload.investigator or "");
+                            if eventName == "run_started" {
+                                runMessage = str(payload.message);
+                            } elif eventName == "worker_started" {
+                                updateWorker(
+                                    investigator,
+                                    "running",
+                                    str(payload.message)
+                                );
+                            } elif eventName == "worker_completed" {
+                                updateWorker(
+                                    investigator,
+                                    "completed",
+                                    str(payload.message)
+                                );
+                            } elif eventName == "graph_delta" {
+                                mergeNodes(hydrateNodes(payload.nodes or []));
+                                mergeEdges(hydrateEdges(payload.edges or []));
+                            } elif eventName == "skeptic_completed" {
+                                updateWorker(
+                                    "SkepticWalker",
+                                    "completed",
+                                    str(payload.message)
+                                );
+                                mergeNodes(hydrateNodes(payload.nodes or []));
+                                mergeEdges(hydrateEdges(payload.edges or []));
+                            } elif eventName == "decision_completed" {
+                                updateWorker(
+                                    "InterventionWalker",
+                                    "completed",
+                                    str(payload.message)
+                                );
+                                runMessage = (
+                                    str(payload.score) + "/100 · "
+                                    + str(payload.decision)
+                                );
+                            } elif eventName == "worker_failed" {
+                                updateWorker(
+                                    investigator,
+                                    "failed",
+                                    str(payload.message)
+                                );
+                                runMessage = (
+                                    "One investigator failed; the run continued"
+                                );
+                            } elif eventName == "run_completed" {
+                                runMessage = (
+                                    "Completed in "
+                                    + str(round(float(payload.wall_clock_ms) / 1000.0, 2))
+                                    + "s wall time vs "
+                                    + str(round(float(payload.summed_worker_ms) / 1000.0, 2))
+                                    + "s summed worker time"
+                                );
+                            }
+                        }
+                    }
+                }
             }
+            await refreshBundle();
+            await selectCase(selectedCaseKey);
         } except Exception as error {
-            runMessage = f"Research interrupted: {error}";
+            runMessage = f"Stream interrupted: {error}. Run again to reconnect.";
         }
-        clearInterval(intervalHandle);
         isRunning = False;
-    }
-
-    async def selectEntity(entityId: str) {
-        try {
-            response = root spawn GetEntityDetail(
-                entity_id=entityId,
-                request_id=str(Date.now())
-            );
-            selected = response.reports[0] if response.reports else None;
-        } except Exception as error {
-            runMessage = f"Could not load evidence: {error}";
-        }
     }
 
     async def resetDemo {
         isLoading = True;
-        selected = None;
         root spawn ResetWorkspace(request_id=str(Date.now()));
-        response = root spawn CreateDemoBatch(
+        response = root spawn CreateDemoWorkspace(
             force=True,
             request_id=str(Date.now())
         );
-        resetBundle = response.reports[0] if response.reports else None;
-        bundle = resetBundle;
-        runMode = "demo";
-        runMessage = "Demo workspace reset";
-        if resetBundle and resetBundle.entities {
-            await selectEntity(resetBundle.entities[0].key);
-        }
+        bundle = response.reports[0] if response.reports else None;
+        runMode = "synthetic";
+        await selectCase("CASE-RUTH-4800");
+        runMessage = "Synthetic workspace reset";
         isLoading = False;
     }
 
     async def uploadCsv(event: ChangeEvent) {
-        uploadError = "";
         file = event.target.files[0] if event.target.files else None;
         if not file {
             return;
         }
+        uploadMessage = "";
         try {
             csvText = await file.text();
-            root spawn ResetWorkspace(request_id=str(Date.now()));
-            response = root spawn CreateCsvBatch(
+            result = root spawn ImportTransferCsv(
                 csv_text=csvText,
-                title=file.name.replace(".csv", ""),
-                request_id=str(Date.now())
+                request_id="upload-" + str(Date.now())
             );
-            csvBundle = response.reports[0] if response.reports else None;
-            bundle = csvBundle;
-            runMessage = f"Loaded {file.name}";
-            if csvBundle and csvBundle.entities {
-                await selectEntity(csvBundle.entities[0].key);
-            }
+            imported = result.reports[0] if result.reports else None;
+            uploadMessage = (
+                imported.message
+                if imported
+                else "Upload completed"
+            );
+            await refreshBundle();
         } except Exception as error {
-            uploadError = str(error);
+            uploadMessage = f"Upload rejected: {error}";
         }
         event.target.value = "";
     }
 
-    def downloadText(filename: str, content: str, contentType: str) {
+    async def recordDecision(decision: str) {
+        if not detail {
+            return;
+        }
+        try {
+            response = root spawn RecordAnalystDecision(
+                case_key=detail.case_node.key,
+                decision=decision,
+                note=analystNote,
+                request_id="decision-" + str(Date.now())
+            );
+            saved = response.reports[0] if response.reports else None;
+            actionMessage = (
+                "Simulated analyst decision recorded: " + saved.decision
+                if saved
+                else "Decision recorded"
+            );
+            await selectCase(selectedCaseKey);
+        } except Exception as error {
+            actionMessage = f"Could not record decision: {error}";
+        }
+    }
+
+    def downloadText(filename: str, content: str, mime: str) {
         anchor = document.createElement("a");
         anchor.href = (
-            "data:" + contentType + ";charset=utf-8," + encodeURIComponent(content)
+            "data:" + mime + ";charset=utf-8,"
+            + encodeURIComponent(content)
         );
         anchor.download = filename;
         document.body.appendChild(anchor);
@@ -258,43 +460,41 @@ def:pub app -> JsxElement {
         document.body.removeChild(anchor);
     }
 
-    def exportMarkdown {
-        if bundle and bundle.report {
+    def exportCaseFile {
+        if detail and detail.case_node.generated_case_file {
             downloadText(
-                "meridian-diligence-report.md",
-                bundle.report.summary_md,
+                "safewire-" + detail.case_node.key.lower() + ".md",
+                detail.case_node.generated_case_file,
                 "text/markdown"
             );
         }
     }
 
-    def exportCsv {
+    def exportQueue {
         if not bundle {
             return;
         }
         csvText = (
-            "rank,name,identifier,sector,risk_score,status,recommendation,coverage"
-        );
-        ranked = sorted(
-            bundle.entities,
-            key=lambda (entity: Entity) { return -entity.risk_score; }
+            "rank,case,customer,amount,legacy_score,safewire_score,"
+            "decision,status,callback"
         );
         rank = 1;
-        for entity in ranked {
+        for item in bundle.cases {
             csvText += (
-                "\n" + str(rank)
-                + "," + csv_escape(entity.name)
-                + "," + csv_escape(entity.identifier)
-                + "," + csv_escape(entity.sector)
-                + "," + str(entity.risk_score)
-                + "," + csv_escape(entity.status)
-                + "," + csv_escape(entity.recommendation)
-                + "," + str(entity.coverage)
+                chr(10) + str(rank)
+                + "," + csv_escape(item.key)
+                + "," + csv_escape(item.subject)
+                + "," + str(item.amount)
+                + "," + str(item.legacy_score)
+                + "," + str(item.safewire_score)
+                + "," + csv_escape(item.decision)
+                + "," + csv_escape(item.status)
+                + "," + str(item.callback_recommended)
             );
             rank += 1;
         }
         downloadText(
-            "meridian-ranked-entities.csv",
+            "safewire-intervention-queue.csv",
             csvText,
             "text/csv"
         );
@@ -302,573 +502,673 @@ def:pub app -> JsxElement {
 
     if isLoading {
         return
-            <div className="loading-shell">
-                <div className="loading-mark"><Sparkles size={24}/></div>
+            <div className="loading-screen">
+                <div className="loading-logo"><Shield size={28}/></div>
                 <div>
-                    <strong>Opening Meridian</strong>
-                    <span>Loading the persistent diligence graph…</span>
+                    <strong>Opening SafeWire</strong>
+                    <span>Restoring the synthetic fraud graph…</span>
                 </div>
             </div>;
     }
 
-    entities = bundle.entities if bundle else [];
-    filteredEntities = [
-        entity
-        for entity in entities
+    cases = bundle.cases if bundle else [];
+    filteredCases = [
+        item for item in cases
         if not searchQuery
-        or searchQuery.lower() in entity.name.lower()
-        or searchQuery.lower() in entity.identifier.lower()
+        or searchQuery.lower() in item.subject.lower()
+        or searchQuery.lower() in item.key.lower()
     ];
-    rankedEntities = sorted(
-        filteredEntities,
-        key=lambda (entity: Entity) { return -entity.risk_score; }
-    );
-    completed = len([
-        entity
-        for entity in entities
-        if entity.status in ["done", "flagged", "partial"]
+    completedWorkers = len([
+        name for name in (detail.worker_names if detail else [])
+        if workerStates.get(name, "pending") == "completed"
     ]);
-    flagged = len([
-        entity
-        for entity in entities
-        if entity.status == "flagged"
-    ]);
-    averageScore = (
-        sum([entity.risk_score for entity in entities]) / len(entities)
-        if entities
-        else 0.0
+    activeCase = detail.case_node if detail else None;
+    activeTransfer = detail.transfer if detail else None;
+    activeCustomer = detail.customer if detail else None;
+    signals = sorted(
+        detail.signals if detail else [],
+        key=lambda (signal: ScamSignal) { return -signal.contribution; }
     );
-    hasReport = bool(bundle and bundle.report);
-    liveEnabled = bool(capabilities and capabilities.live_available);
-    hasParallelProof = bool(
-        bundle
-        and bundle.batch.wall_clock_ms > 0
-        and bundle.batch.sequential_ms > 0
-    );
-    wallClockSeconds = (
-        round(bundle.batch.wall_clock_ms / 1000.0, 1)
-        if hasParallelProof
-        else 0.0
-    );
-    sequentialSeconds = (
-        round(bundle.batch.sequential_ms / 1000.0, 1)
-        if hasParallelProof
-        else 0.0
+    selectedGraphNode = find_view_node(graphNodes, selectedNodeId);
+    hasTiming = bool(
+        activeCase
+        and activeCase.wall_clock_ms > 0
+        and activeCase.summed_worker_ms > 0
     );
     speedup = (
         round(
-            bundle.batch.sequential_ms / bundle.batch.wall_clock_ms,
+            activeCase.summed_worker_ms / activeCase.wall_clock_ms,
             1
         )
-        if hasParallelProof
+        if hasTiming
         else 0.0
+    );
+    aiReady = bool(
+        bundle and bundle.capabilities.openai_configured
     );
 
     return
         <div className="app-shell">
             <header className="topbar">
-                <div className="brand-lockup">
-                    <div className="brand-symbol">
-                        <span></span><span></span><span></span>
-                    </div>
-                    <div>
-                        <div className="brand-name">MERIDIAN</div>
-                        <div className="brand-subtitle">Parallel diligence mesh</div>
-                    </div>
-                </div>
-                <nav className="view-switcher" aria-label="Primary views">
+                <button
+                    className="brand"
+                    onClick={lambda { activeView = "investigation"; }}
+                >
+                    <span className="brand-mark"><Shield size={19}/></span>
+                    <span>
+                        <strong>SAFEWIRE</strong>
+                        <small>Elder Scam Command Center</small>
+                    </span>
+                </button>
+                <nav className="topnav" aria-label="Primary">
                     <button
-                        className={"view-tab active" if activeView == "workspace" else "view-tab"}
-                        onClick={lambda { activeView = "workspace"; }}
+                        className={"active" if activeView == "investigation" else ""}
+                        onClick={lambda { activeView = "investigation"; }}
                     >
-                        Workspace
+                        Investigation
                     </button>
                     <button
-                        className={"view-tab active" if activeView == "report" else "view-tab"}
-                        onClick={lambda { activeView = "report"; }}
+                        className={"active" if activeView == "casefile" else ""}
+                        onClick={lambda { activeView = "casefile"; }}
                     >
-                        Report
-                        {if hasReport {
-                            <span key="report-ready" className="tab-dot"></span>
-                        }}
+                        Case File
                     </button>
                 </nav>
-                <div className="topbar-actions">
-                    <div className={"mode-trust-badge " + runMode}>
-                        <span className="mode-trust-dot"></span>
+                <div className="top-actions">
+                    <div className={"trust-badge " + ("ai" if runMode == "ai" else "synthetic")}>
+                        <span></span>
                         <div>
                             <strong>
-                                {("LIVE APIs" if runMode == "live" else "SEEDED DEMO")}
+                                {(
+                                    "AI-ASSISTED NOTE REVIEW"
+                                    if runMode == "ai"
+                                    else "SYNTHETIC DEMO"
+                                )}
                             </strong>
                             <small>
                                 {(
-                                    "OpenAI + Tavily"
-                                    if runMode == "live"
-                                    else "Frozen evidence · real Jac execution"
+                                    "Only supplied note is sent"
+                                    if runMode == "ai"
+                                    else "No keys · no real customer data"
                                 )}
                             </small>
                         </div>
                     </div>
-                    <div className="snapshot-chip">
-                        <Database size={14}/>
-                        Snapshot {bundle.batch.snapshot_date if bundle else "—"}
-                    </div>
-                    <button className="icon-button" title="Reset demo" onClick={resetDemo}>
+                    <button
+                        className="icon-button"
+                        title="Reset synthetic workspace"
+                        onClick={resetDemo}
+                    >
                         <RefreshCw size={17}/>
                     </button>
-                    <div className="run-action-cluster">
-                        <button
-                            className="primary-button compact"
-                            onClick={runResearch}
-                            disabled={isRunning}
-                        >
-                            {if isRunning {
-                                <RefreshCw key="running-icon" className="spin" size={16}/>
-                                <span key="running-label">Running · {elapsedSeconds}s</span>
-                            } else {
-                                <Play key="run-icon" size={16}/>
-                                <span key="run-label">Run diligence</span>
-                            }}
-                        </button>
-                        {if hasParallelProof {
-                            <div
-                                key="parallel-proof"
-                                className="parallel-proof"
-                                title="Measured wall-clock run time compared with the sum of all issuer worker times"
-                            >
-                                <strong>{wallClockSeconds}s parallel</strong>
-                                <span>vs {sequentialSeconds}s one-by-one</span>
-                                <b>{speedup}× faster</b>
-                            </div>
-                        } else {
-                            <div key="parallel-pending" className="parallel-proof pending">
-                                8 Jac workers launch together
-                            </div>
-                        }}
-                    </div>
                 </div>
             </header>
 
-            {if activeView == "workspace" {
-                <div key="workspace" className="workspace-layout">
-                    <aside className="left-rail">
-                        <section className="rail-section">
-                            <div className="section-eyebrow">Dataset</div>
-                            <div className="dataset-card">
-                                <div className="dataset-icon"><Database size={18}/></div>
-                                <div className="dataset-copy">
-                                    <strong>{bundle.batch.title if bundle else "No batch"}</strong>
-                                    <span>{len(entities)} issuers · 5 diligence fields</span>
-                                </div>
-                                <Check size={16} className="success-icon"/>
-                            </div>
-                            <label className="upload-button">
-                                <Upload size={15}/>
-                                Upload entity CSV
-                                <input
-                                    type="file"
-                                    accept=".csv,text/csv"
-                                    onChange={uploadCsv}
-                                />
-                            </label>
-                            {if uploadError {
-                                <div key="upload-error" className="inline-error">
-                                    <CircleAlert size={14}/>{uploadError}
-                                </div>
-                            }}
-                        </section>
-
-                        <section className="rail-section">
-                            <div className="section-eyebrow">Execution mode</div>
-                            <button
-                                className={"mode-card selected" if runMode == "demo" else "mode-card"}
-                                onClick={lambda { runMode = "demo"; }}
-                            >
-                                <div className="mode-radio"></div>
-                                <div>
-                                    <strong>Seeded evidence</strong>
-                                    <span>No keys required · deterministic</span>
-                                </div>
-                            </button>
-                            <button
-                                className={"mode-card selected" if runMode == "live" else "mode-card"}
-                                onClick={lambda { if liveEnabled { runMode = "live"; }}}
-                                disabled={not liveEnabled}
-                            >
-                                <div className="mode-radio"></div>
-                                <div>
-                                    <strong>Live research</strong>
-                                    <span>
-                                        {(
-                                            "OpenAI + Tavily ready"
-                                            if liveEnabled
-                                            else "Add API keys to enable"
-                                        )}
-                                    </span>
-                                </div>
-                            </button>
-                        </section>
-
-                        <section className="rail-section schema-section">
-                            <div className="section-eyebrow">Research schema</div>
-                            {for (field, weight) in [
-                                ("Use of proceeds", "Context"),
-                                ("Lender protections", "15%"),
-                                ("Credit rating changes", "25%"),
-                                ("Borrowing cost vs peers", "25%"),
-                                ("Legal exposure", "20%"),
-                                ("Missing disclosures", "15%")
-                            ] {
-                                <div className="schema-row" key={field}>
-                                    <span>{field}</span>
-                                    <small>{weight}</small>
-                                </div>
-                            }}
-                        </section>
-
-                        <div className="rail-footnote">
-                            <ShieldCheck size={15}/>
-                            Claims are bound to stored source URLs. Unknown citations are rejected.
+            {if activeView == "casefile" {
+                <main key="casefile" className="casefile-view">
+                    <div className="casefile-head">
+                        <div>
+                            <div className="eyebrow">Analyst-ready artifact</div>
+                            <h1>Case File</h1>
+                            <p>
+                                Evidence, skeptic findings, recommendation, and
+                                human-control safeguards in one export.
+                            </p>
                         </div>
+                        <button
+                            className="primary-button"
+                            onClick={exportCaseFile}
+                            disabled={not activeCase or not activeCase.generated_case_file}
+                        >
+                            <Download size={16}/> Download Markdown
+                        </button>
+                    </div>
+                    <article className="markdown-preview">
+                        <pre>
+                            {(
+                                activeCase.generated_case_file
+                                if activeCase and activeCase.generated_case_file
+                                else "Run an investigation to generate the case file."
+                            )}
+                        </pre>
+                    </article>
+                </main>
+            } else {
+                <div key="investigation" className="command-layout">
+                    <aside className="queue-rail">
+                        <div className="queue-head">
+                            <div>
+                                <div className="eyebrow">Intervention queue</div>
+                                <h2>{len(cases)} transfers</h2>
+                            </div>
+                            <button
+                                className="small-icon"
+                                title="Export intervention queue"
+                                onClick={exportQueue}
+                            >
+                                <Download size={15}/>
+                            </button>
+                        </div>
+                        <div className="search-box">
+                            <Search size={15}/>
+                            <input
+                                value={searchQuery}
+                                onChange={lambda event { searchQuery = event.target.value; }}
+                                placeholder="Search customer or case"
+                                aria-label="Search intervention queue"
+                            />
+                        </div>
+                        <div className="queue-list">
+                            {for (index, item) in enumerate(filteredCases) {
+                                <button
+                                    key={item.key}
+                                    className={
+                                        "queue-item "
+                                        + ("selected " if selectedCaseKey == item.key else "")
+                                        + ("cleared" if item.cleared_by_skeptic else "")
+                                    }
+                                    onClick={lambda { selectCase(item.key); }}
+                                >
+                                    <span className="queue-rank">{index + 1}</span>
+                                    <span className="queue-copy">
+                                        <strong>{item.subject}</strong>
+                                        <small>{money(item.amount)} · {item.key}</small>
+                                        <span className={"queue-decision " + score_tone(item.safewire_score)}>
+                                            {(
+                                                "Cleared by Skeptic"
+                                                if item.cleared_by_skeptic
+                                                else item.decision
+                                            )}
+                                        </span>
+                                    </span>
+                                    <span className="queue-score">
+                                        <b>{item.safewire_score if item.safewire_score > 0 else item.legacy_score}</b>
+                                        <small>/100</small>
+                                    </span>
+                                </button>
+                            }}
+                        </div>
+                        <label className="upload-control">
+                            <Upload size={15}/>
+                            Import transfer CSV
+                            <input
+                                type="file"
+                                accept=".csv,text/csv"
+                                onChange={uploadCsv}
+                            />
+                        </label>
+                        <p className="upload-note">
+                            Up to 200 rows / 1 MB. Missing graph links stay partial.
+                        </p>
+                        {if uploadMessage {
+                            <div key="upload-message" className="rail-message">
+                                {uploadMessage}
+                            </div>
+                        }}
                     </aside>
 
-                    <main className="main-canvas">
-                        <section className="hero-strip">
-                            <div>
-                                <div className="section-eyebrow">Credit risk screening · before market open</div>
-                                <h1>Find hidden credit risk across a bond watchlist</h1>
+                    <main className="investigation-main">
+                        <section className="hero-panel">
+                            <div className="hero-copy">
+                                <div className="eyebrow">Stop the transfer, preserve the relationship</div>
+                                <h1>
+                                    Screen suspicious transfers before an elder
+                                    scammer moves the money.
+                                </h1>
                                 <p>
-                                    Eight Jac researchers work in parallel, anchor every
-                                    finding to a source, and turn five credit checks into
-                                    one explainable ranking.
+                                    SafeWire connects customer behavior, recipient
+                                    networks, money movement, identity infrastructure,
+                                    and the customer's own words—then forces a skeptic
+                                    check before recommending intervention.
                                 </p>
                             </div>
-                            <div className="hero-meta">
-                                <div className="live-indicator">
-                                    <span className={("pulse-dot active" if isRunning else "pulse-dot")}></span>
-                                    {("Workers active" if isRunning else "Workspace ready")}
-                                </div>
-                                <div className="run-message">{runMessage or "Select Run diligence to execute the mesh"}</div>
-                            </div>
-                        </section>
-
-                        <section className="metrics-grid">
-                            <div className="metric-card">
-                                <span>Entities</span>
-                                <strong>{len(entities)}</strong>
-                                <small>{completed} completed</small>
-                            </div>
-                            <div className="metric-card">
-                                <span>Flagged</span>
-                                <strong className="metric-risk">{flagged}</strong>
-                                <small>Two-signal minimum</small>
-                            </div>
-                            <div className="metric-card">
-                                <span>Average risk</span>
-                                <strong>{round(averageScore, 1)}</strong>
-                                <small>Deterministic / 100</small>
-                            </div>
-                            <div className="metric-card">
-                                <span>Evidence fields</span>
-                                <strong>{completed * 5}</strong>
-                                <small>URL-anchored claims</small>
-                            </div>
-                        </section>
-
-                        <section className="mesh-panel">
-                            <div className="panel-heading">
-                                <div>
-                                    <div className="section-eyebrow">Concurrent execution proof</div>
-                                    <h2>Parallel issuer research</h2>
-                                </div>
-                                <div className="mesh-heading-meta">
-                                    {if hasParallelProof {
-                                        <div key="mesh-proof-line" className="mesh-proof-line">
-                                            <Activity size={14}/>
-                                            <strong>{wallClockSeconds}s parallel</strong>
-                                            <span>vs {sequentialSeconds}s one-by-one</span>
-                                            <b>{speedup}× faster</b>
-                                        </div>
-                                    }}
-                                    <div className="pipeline-legend">
-                                        <span><i className="legend-dot queued"></i>Queued</span>
-                                        <span><i className="legend-dot running"></i>Active</span>
-                                        <span><i className="legend-dot complete"></i>Complete</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="pipeline">
-                                {for step in [
-                                    "Batch",
-                                    "Research",
-                                    "Extract",
-                                    "Score",
-                                    "Report"
-                                ] {
-                                    <div
-                                        key={step}
-                                        className={"pipeline-step active" if (isRunning or completed > 0) else "pipeline-step"}
+                            <div className="hero-controls">
+                                <div className="mode-toggle">
+                                    <button
+                                        className={"active" if runMode == "synthetic" else ""}
+                                        onClick={lambda { runMode = "synthetic"; }}
                                     >
-                                        <div className="pipeline-icon">
-                                            {if step == "Batch" { <Database key="batch-icon" size={15}/> }}
-                                            {if step == "Research" { <Search key="research-icon" size={15}/> }}
-                                            {if step == "Extract" { <FileSearch key="extract-icon" size={15}/> }}
-                                            {if step == "Score" { <Activity key="score-icon" size={15}/> }}
-                                            {if step == "Report" { <FileText key="report-icon" size={15}/> }}
-                                        </div>
-                                        <span>{step}</span>
+                                        Deterministic
+                                    </button>
+                                    <button
+                                        className={"active" if runMode == "ai" else ""}
+                                        onClick={lambda { if aiReady { runMode = "ai"; }}}
+                                        disabled={not aiReady}
+                                        title={"" if aiReady else "Add a new OPENAI_API_KEY locally to enable"}
+                                    >
+                                        AI note review
+                                    </button>
+                                </div>
+                                <button
+                                    className="primary-button run-button"
+                                    onClick={runInvestigation}
+                                    disabled={isRunning or not detail}
+                                >
+                                    {if isRunning {
+                                        <RefreshCw key="spin" className="spin" size={17}/>
+                                        <span key="running">Investigating…</span>
+                                    } else {
+                                        <Play key="play" size={17}/>
+                                        <span key="run">
+                                            {(
+                                                "Re-run investigation"
+                                                if activeCase and activeCase.status == "completed"
+                                                else "Investigate transfer"
+                                            )}
+                                        </span>
+                                    }}
+                                </button>
+                                <div className={"timing-proof " + ("verified" if hasTiming else "")}>
+                                    <Clock3 size={15}/>
+                                    {if hasTiming {
+                                        <span key="timing-ready">
+                                            <strong>
+                                                {round(activeCase.wall_clock_ms / 1000.0, 2)}s parallel
+                                            </strong>
+                                            {" "}vs {round(activeCase.summed_worker_ms / 1000.0, 2)}s one-by-one
+                                            <b>{speedup}× overlap</b>
+                                        </span>
+                                    } else {
+                                        <span key="timing-pending">
+                                            Five investigators launch before any result is awaited
+                                        </span>
+                                    }}
+                                </div>
+                            </div>
+                        </section>
+
+                        {if detail {
+                            <section key="case-content" className="case-strip">
+                                <div className="case-identity">
+                                    <div className="avatar">
+                                        {activeCustomer.name[0] if activeCustomer else "?"}
                                     </div>
-                                    if step != "Report" {
-                                        <ChevronRight key={step + "-arrow"} className="pipeline-arrow" size={15}/>
-                                    }
-                                }}
+                                    <div>
+                                        <div className="case-kicker">
+                                            {activeCase.key} · {activeTransfer.created_at}
+                                        </div>
+                                        <h2>
+                                            {activeCustomer.name if activeCustomer else activeCase.subject}
+                                            <span>Age {activeCustomer.age if activeCustomer else "—"}</span>
+                                        </h2>
+                                        <p>
+                                            {money(activeTransfer.amount)} to {
+                                                detail.recipient_account.label
+                                                if detail.recipient_account
+                                                else "recipient pending graph attachment"
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="score-comparison">
+                                    <div className="legacy-score">
+                                        <span>Legacy rules</span>
+                                        <strong>{activeCase.legacy_score}</strong>
+                                        <small>{activeCase.legacy_decision}</small>
+                                    </div>
+                                    <ArrowRight size={20}/>
+                                    <div className={"safewire-score " + score_tone(activeCase.safewire_score)}>
+                                        <span>SafeWire</span>
+                                        <strong>{activeCase.safewire_score}</strong>
+                                        <small>{activeCase.decision}</small>
+                                    </div>
+                                </div>
+                                <div className={"recommendation-card " + ("clear" if activeCase.cleared_by_skeptic else "")}>
+                                    {if activeCase.cleared_by_skeptic {
+                                        <CheckCircle2 key="clear-icon" size={20}/>
+                                    } else {
+                                        <PhoneCall key="phone-icon" size={20}/>
+                                    }}
+                                    <div>
+                                        <span>
+                                            {(
+                                                "Cleared by Skeptic"
+                                                if activeCase.cleared_by_skeptic
+                                                else "Recommended next step"
+                                            )}
+                                        </span>
+                                        <strong>{activeCase.recommendation}</strong>
+                                    </div>
+                                </div>
+                            </section>
+                        }}
+
+                        <section className="workers-panel">
+                            <div className="section-heading">
+                                <div>
+                                    <div className="eyebrow">Measured Jac execution</div>
+                                    <h2>Seven specialized investigators</h2>
+                                </div>
+                                <span className="worker-count">
+                                    {completedWorkers}/7 complete
+                                </span>
                             </div>
                             <div className="worker-grid">
-                                {for entity in entities {
-                                    <button
-                                        key={entity.key}
-                                        className={
-                                            "worker-card selected"
-                                            if selected and selected.entity.key == entity.key
-                                            else "worker-card"
-                                        }
-                                        onClick={lambda { selectEntity(entity.key); }}
-                                    >
-                                        <div className="worker-topline">
-                                            <span className={"worker-status " + entity.status}></span>
-                                            <small>{status_label(entity.status)}</small>
-                                            {if entity.elapsed_ms > 0 {
-                                                <small key="elapsed" className="worker-time">{entity.elapsed_ms}ms</small>
+                                {for name in (detail.worker_names if detail else []) {
+                                    state = workerStates.get(name, "pending");
+                                    <div key={name} className={"worker-card " + state}>
+                                        <div className="worker-icon">
+                                            {if state == "completed" {
+                                                <Check key="done" size={15}/>
+                                            } elif state == "running" {
+                                                <Activity key="active" className="pulse" size={15}/>
+                                            } elif state == "failed" {
+                                                <XCircle key="failed" size={15}/>
+                                            } else {
+                                                <CircleDot key="pending" size={15}/>
                                             }}
                                         </div>
-                                        <strong>{entity.name}</strong>
-                                        <span>{entity.identifier}</span>
-                                        <div className="worker-progress">
-                                            <i style={{"width": (
-                                                "100%"
-                                                if entity.status in ["done", "flagged"]
-                                                else ("62%" if entity.status == "researching" else "12%")
-                                            )}}></i>
+                                        <div>
+                                            <strong>{short_worker(name)}</strong>
+                                            <span>{worker_path(name)}</span>
+                                            <small>
+                                                {workerMessages.get(
+                                                    name,
+                                                    (
+                                                        "Completed from persisted graph"
+                                                        if state == "completed"
+                                                        else "Waiting for launch"
+                                                    )
+                                                )}
+                                            </small>
                                         </div>
-                                    </button>
+                                    </div>
                                 }}
+                            </div>
+                            <div className="run-status">
+                                <Zap size={15}/>
+                                <span>{runMessage}</span>
                             </div>
                         </section>
 
-                        <section className="ranking-panel">
-                            <div className="panel-heading ranking-heading">
+                        <section className="graph-panel">
+                            <div className="section-heading graph-heading">
                                 <div>
-                                    <div className="section-eyebrow">Decision queue</div>
-                                    <h2>Ranked entities</h2>
-                                    <p className="ranking-explainer">
-                                        Five weighted risk checks—ratings, market pricing,
-                                        legal exposure, lender protections, and disclosure
-                                        quality—must be independently corroborated.
+                                    <div className="eyebrow">Live investigation network</div>
+                                    <h2>Graph expands as real walkers finish</h2>
+                                    <p>
+                                        Click a node to inspect it. Edge labels show the
+                                        typed relationship each walker traversed.
                                     </p>
                                 </div>
-                                <div className="table-tools">
-                                    <label className="search-box">
-                                        <Search size={15}/>
-                                        <input
-                                            value={searchQuery}
-                                            onChange={lambda (event: ChangeEvent) {
-                                                searchQuery = event.target.value;
-                                            }}
-                                            placeholder="Filter issuers"
-                                        />
-                                        {if searchQuery {
-                                            <button key="clear-search" onClick={lambda { searchQuery = ""; }}><X size={14}/></button>
-                                        }}
-                                    </label>
-                                    <button className="secondary-button" onClick={exportCsv}>
-                                        <Download size={15}/> CSV
-                                    </button>
+                                <div className="graph-stats">
+                                    <span><Network size={14}/>{len(graphNodes)} nodes</span>
+                                    <span><GitBranch size={14}/>{len(graphEdges)} edges</span>
                                 </div>
                             </div>
-                            <div className="entity-table">
-                                <div className="table-row table-header">
-                                    <span>Rank / entity</span>
-                                    <span>Sector</span>
-                                    <span>Coverage</span>
-                                    <span>Risk score</span>
-                                    <span>Recommended action</span>
-                                    <span></span>
+                            <div className="graph-canvas">
+                                <svg
+                                    viewBox="0 0 960 540"
+                                    role="img"
+                                    aria-label="Live transfer investigation graph"
+                                >
+                                    {for view_edge in graphEdges {
+                                        source = find_view_node(graphNodes, view_edge.from_id);
+                                        target = find_view_node(graphNodes, view_edge.to_id);
+                                        if source and target {
+                                            midX = (source.x + target.x) / 2.0;
+                                            midY = (source.y + target.y) / 2.0;
+                                            <g key={view_edge.id} className={"graph-edge " + view_edge.tone}>
+                                                <line
+                                                    x1={source.x}
+                                                    y1={source.y}
+                                                    x2={target.x}
+                                                    y2={target.y}
+                                                />
+                                                <text x={midX} y={midY - 7} textAnchor="middle">
+                                                    {view_edge.label}
+                                                </text>
+                                            </g>
+                                        }
+                                    }}
+                                    {for view_node in graphNodes {
+                                        <g
+                                            key={view_node.id}
+                                            className={
+                                                "graph-node " + view_node.tone
+                                                + (" selected" if selectedNodeId == view_node.id else "")
+                                            }
+                                            transform={"translate(" + str(view_node.x) + " " + str(view_node.y) + ")"}
+                                            onClick={lambda {
+                                                selectedNodeId = view_node.id;
+                                                activeTab = "connections";
+                                            }}
+                                            role="button"
+                                            tabIndex="0"
+                                        >
+                                            <circle
+                                                r={31 if view_node.kind == "InvestigationCase" else 25}
+                                            />
+                                            <text className="node-kind" y="-38" textAnchor="middle">
+                                                {view_node.kind}
+                                            </text>
+                                            <text className="node-label" y="45" textAnchor="middle">
+                                                {view_node.label}
+                                            </text>
+                                        </g>
+                                    }}
+                                </svg>
+                                <div className="graph-legend">
+                                    <span><i className="source"></i>Customer</span>
+                                    <span><i className="risk"></i>Risk network</span>
+                                    <span><i className="identity"></i>Identity</span>
+                                    <span><i className="flow"></i>Money flow</span>
+                                    <span><i className="cleared"></i>Verified</span>
                                 </div>
-                                {for (index, entity) in enumerate(rankedEntities) {
-                                    <button
-                                        key={entity.key}
-                                        className="table-row"
-                                        onClick={lambda { selectEntity(entity.key); }}
-                                    >
-                                        <span className="entity-cell">
-                                            <i>{index + 1}</i>
-                                            <span>
-                                                <strong>{entity.name}</strong>
-                                                <small>{entity.identifier}</small>
-                                            </span>
-                                        </span>
-                                        <span>{entity.sector}</span>
-                                        <span>
-                                            <div className="coverage-cell">
-                                                <i><b style={{"width": f"{entity.coverage}%"}}></b></i>
-                                                {int(round(entity.coverage))}%
-                                            </div>
-                                        </span>
-                                        <span>
-                                            <div className={"risk-pill " + risk_class(entity.risk_score)}>
-                                                {round(entity.risk_score, 1)}
-                                            </div>
-                                        </span>
-                                        <span className="action-cell">{entity.recommendation}</span>
-                                        <span><ChevronRight size={16}/></span>
-                                    </button>
-                                }}
                             </div>
                         </section>
                     </main>
 
                     <aside className="evidence-drawer">
-                        {if selected {
-                            <div key="drawer-header" className="drawer-header">
-                                <div>
-                                    <div className="section-eyebrow">Evidence record</div>
-                                    <h2>{selected.entity.name}</h2>
-                                    <span>{selected.entity.identifier} · {selected.entity.sector}</span>
-                                </div>
-                                <div className={"score-orb " + risk_class(selected.entity.risk_score)}>
-                                    <strong>{round(selected.entity.risk_score, 1)}</strong>
-                                    <span>risk</span>
-                                </div>
+                        <div className="drawer-head">
+                            <div>
+                                <div className="eyebrow">Analyst evidence</div>
+                                <h2>
+                                    {(
+                                        selectedGraphNode.label
+                                        if selectedGraphNode
+                                        else "Case intelligence"
+                                    )}
+                                </h2>
                             </div>
-                            <div key="recommendation" className="recommendation-box">
-                                <ShieldCheck size={18}/>
-                                <div>
-                                    <small>Recommended next action</small>
-                                    <strong>{selected.entity.recommendation}</strong>
-                                </div>
-                            </div>
-                            <div key="drawer-tabs" className="drawer-tabs">
-                                <button className="active">Evidence</button>
-                                <button>Signals <span>{len(selected.signals)}</span></button>
-                                <button>Comparables <span>{len(selected.comparables)}</span></button>
-                            </div>
-                            <div key="evidence-list" className="evidence-list">
-                                {if not selected.attributes {
-                                    <div key="no-evidence" className="drawer-empty">
-                                        <FileSearch size={24}/>
-                                        <strong>No evidence collected yet</strong>
-                                        <span>Run the diligence mesh to populate this graph.</span>
-                                    </div>
-                                }}
-                                {for attribute in selected.attributes {
-                                    <article className="evidence-card" key={attribute.key}>
-                                        <div className="evidence-card-top">
-                                            <span>{attribute.label}</span>
-                                            <small>{int(round(attribute.confidence * 100))}% confidence</small>
-                                        </div>
-                                        <p>{attribute.value}</p>
-                                        <blockquote>{attribute.excerpt}</blockquote>
-                                        <a
-                                            href={attribute.source_url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                        >
-                                            <ExternalLink size={13}/>
-                                            {attribute.source_title}
-                                        </a>
-                                    </article>
-                                }}
-                            </div>
-                            if selected.signals {
-                                <div key="signals" className="signal-section">
-                                    <div className="section-eyebrow">Corroboration trail</div>
-                                    {for signal in selected.signals {
-                                        <div className="signal-row" key={signal.category}>
-                                            <div>
-                                                <strong>{signal_label(signal.category)}</strong>
-                                                <span>{signal.rationale}</span>
-                                            </div>
-                                            <b>+{round(signal.contribution, 1)}</b>
-                                        </div>
-                                    }}
-                                </div>
-                            }
-                            if selected.comparables {
-                                <div key="comparables" className="signal-section">
-                                    <div className="section-eyebrow">Comparable instruments</div>
-                                    {for comparable in selected.comparables {
-                                        <div className="comparable-row" key={comparable.name}>
-                                            <GitBranch size={14}/>
-                                            <span>{comparable.name}</span>
-                                        </div>
-                                    }}
-                                </div>
-                            }
-                        } else {
-                            <div key="no-selection" className="drawer-empty standalone">
-                                <FileSearch size={30}/>
-                                <strong>Select an issuer</strong>
-                                <span>Its sourced evidence and score calculation will appear here.</span>
+                            {if activeCase {
+                                <span key="drawer-score" className={"drawer-score " + score_tone(activeCase.safewire_score)}>
+                                    {activeCase.safewire_score}
+                                </span>
+                            }}
+                        </div>
+                        {if selectedGraphNode {
+                            <div key="selected-node" className="selected-node-card">
+                                <span>{selectedGraphNode.kind} · {selectedGraphNode.id}</span>
+                                <strong>{selectedGraphNode.detail}</strong>
                             </div>
                         }}
+                        <div className="drawer-tabs">
+                            {for (key, label) in [
+                                ("signals", "Signals"),
+                                ("evidence", "Evidence"),
+                                ("skeptic", "Skeptic"),
+                                ("connections", "Links"),
+                                ("actions", "Actions")
+                            ] {
+                                <button
+                                    key={key}
+                                    className={"active" if activeTab == key else ""}
+                                    onClick={lambda { activeTab = key; }}
+                                >
+                                    {label}
+                                </button>
+                            }}
+                        </div>
+                        <div className="drawer-body">
+                            {if activeTab == "signals" {
+                                <div key="signals" className="signal-list">
+                                    <div className="plain-language-note">
+                                        <Info size={15}/>
+                                        Five weighted risk categories, each independently
+                                        corroborated before a hold is recommended.
+                                    </div>
+                                    {for signal in signals {
+                                            <article key={signal.key} className="signal-card">
+                                                <div className="signal-top">
+                                                    <span>+{signal.contribution}</span>
+                                                    <small>{signal.investigator}</small>
+                                                </div>
+                                                <h3>{signal.label}</h3>
+                                                <p>{signal.rationale}</p>
+                                                <div className="explain-chip">
+                                                    {signal_plain_language(signal.category)}
+                                                </div>
+                                                <footer>
+                                                    {len(signal.evidence_families)} source families
+                                                    <b>{signal.skeptic_disposition}</b>
+                                                </footer>
+                                            </article>
+                                    }}
+                                    {if not signals {
+                                        <div key="no-signals" className="empty-state">
+                                            <ShieldAlert size={28}/>
+                                            <strong>No applied signals yet</strong>
+                                            <span>Run the investigation to populate evidence.</span>
+                                        </div>
+                                    }}
+                                </div>
+                            } elif activeTab == "evidence" {
+                                <div key="evidence" className="evidence-list">
+                                    {for (index, item) in enumerate(detail.evidence if detail else []) {
+                                        <article key={str(index) + item.label}>
+                                            <div>
+                                                <FileCheck2 size={16}/>
+                                                <span>{item.label}</span>
+                                            </div>
+                                            <blockquote>“{item.quote}”</blockquote>
+                                            <footer>
+                                                {item.source_family.replace("_", " ")}
+                                                {if item.verified_exact {
+                                                    <b key="exact"><BadgeCheck size={13}/> exact</b>
+                                                }}
+                                            </footer>
+                                        </article>
+                                    }}
+                                </div>
+                            } elif activeTab == "skeptic" {
+                                <div key="skeptic" className="skeptic-panel">
+                                    <div className={"skeptic-verdict " + ("cleared" if activeCase and activeCase.cleared_by_skeptic else "survived")}>
+                                        {if activeCase and activeCase.cleared_by_skeptic {
+                                            <CheckCircle2 key="skeptic-clear" size={24}/>
+                                        } else {
+                                            <ShieldAlert key="skeptic-risk" size={24}/>
+                                        }}
+                                        <div>
+                                            <strong>
+                                                {(
+                                                    "Cleared by Skeptic"
+                                                    if activeCase and activeCase.cleared_by_skeptic
+                                                    else "Signals survived challenge"
+                                                )}
+                                            </strong>
+                                            <span>
+                                                Invoice, prior relationship, merchant identity,
+                                                and correlated evidence were checked.
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {for finding in (activeCase.skeptic_findings if activeCase else []) {
+                                        <div key={finding} className="finding">
+                                            <Check size={15}/>{finding}
+                                        </div>
+                                    }}
+                                </div>
+                            } elif activeTab == "connections" {
+                                <div key="connections" className="connections-panel">
+                                    <h3>
+                                        {(
+                                            selectedGraphNode.label
+                                            if selectedGraphNode
+                                            else "Select a graph node"
+                                        )}
+                                    </h3>
+                                    {for view_edge in graphEdges {
+                                        if (
+                                            not selectedNodeId
+                                            or view_edge.from_id == selectedNodeId
+                                            or view_edge.to_id == selectedNodeId
+                                        ) {
+                                            <button
+                                                key={view_edge.id}
+                                                onClick={lambda {
+                                                    selectedNodeId = (
+                                                        view_edge.to_id
+                                                        if view_edge.from_id == selectedNodeId
+                                                        else view_edge.from_id
+                                                    );
+                                                }}
+                                            >
+                                                <GitBranch size={15}/>
+                                                <span>
+                                                    <b>{view_edge.label}</b>
+                                                    {view_edge.from_id} → {view_edge.to_id}
+                                                </span>
+                                                <ChevronRight size={14}/>
+                                            </button>
+                                        }
+                                    }}
+                                </div>
+                            } else {
+                                <div key="actions" className="actions-panel">
+                                    <div className="human-control">
+                                        <UserCheck size={19}/>
+                                        <div>
+                                            <strong>Human decision required</strong>
+                                            <span>
+                                                Controls record a simulation only. No account,
+                                                payment, message, or person is affected.
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <label>
+                                        Analyst note
+                                        <textarea
+                                            value={analystNote}
+                                            onChange={lambda event { analystNote = event.target.value; }}
+                                            placeholder="Record confirmation or request specific evidence…"
+                                        ></textarea>
+                                    </label>
+                                    <div className="action-buttons">
+                                        <button
+                                            className="approve"
+                                            onClick={lambda { recordDecision("approve"); }}
+                                        >
+                                            <CheckCircle2 size={15}/> Approve hold
+                                        </button>
+                                        <button
+                                            onClick={lambda { recordDecision("request_more_information"); }}
+                                        >
+                                            <Info size={15}/> Request more info
+                                        </button>
+                                        <button
+                                            className="reject"
+                                            onClick={lambda { recordDecision("reject"); }}
+                                        >
+                                            <XCircle size={15}/> Reject
+                                        </button>
+                                    </div>
+                                    {if activeCase and activeCase.analyst_decision {
+                                        <div key="saved-action" className="saved-action">
+                                            <BadgeCheck size={16}/>
+                                            Persisted: {activeCase.analyst_decision.replace("_", " ")}
+                                        </div>
+                                    }}
+                                    {if actionMessage {
+                                        <div key="action-message" className="action-message">
+                                            {actionMessage}
+                                        </div>
+                                    }}
+                                </div>
+                            }}
+                        </div>
                     </aside>
                 </div>
-            } else {
-                <main key="report-view" className="report-view">
-                    <div className="report-toolbar">
-                        <div>
-                            <div className="section-eyebrow">Reporter walker output</div>
-                            <h1>Ranked diligence report</h1>
-                            <p>Every linked claim resolves to evidence stored in the Jac graph.</p>
-                        </div>
-                        <div>
-                            <button className="secondary-button" onClick={exportCsv}>
-                                <Download size={15}/> Export CSV
-                            </button>
-                            <button
-                                className="primary-button"
-                                onClick={exportMarkdown}
-                                disabled={not hasReport}
-                            >
-                                <FileText size={15}/> Download Markdown
-                            </button>
-                        </div>
-                    </div>
-                    {if bundle and bundle.report {
-                        <div key="report-paper" className="report-paper">
-                            <div className="report-cover">
-                                <div className="brand-symbol large">
-                                    <span></span><span></span><span></span>
-                                </div>
-                                <span>MERIDIAN / DILIGENCE MEMORANDUM</span>
-                                <h2>{bundle.batch.title}</h2>
-                                <p>
-                                    Generated {bundle.report.generated_at[:10]} ·
-                                    {bundle.report.entity_count} entities ·
-                                    {bundle.report.flagged_count} flagged
-                                </p>
-                            </div>
-                            <pre className="report-markdown">{bundle.report.summary_md}</pre>
-                        </div>
-                    } else {
-                        <div key="report-empty" className="report-empty">
-                            <FileText size={32}/>
-                            <h2>No report yet</h2>
-                            <p>Run the diligence mesh to research, score, and rank the active batch.</p>
-                            <button className="primary-button" onClick={lambda {
-                                activeView = "workspace";
-                                runResearch();
-                            }}>
-                                <Play size={16}/> Run diligence
-                            </button>
-                        </div>
-                    }}
-                </main>
             }}
-
-            <footer className="app-footer">
-                <span>Meridian is an explainable research prototype, not investment advice.</span>
-                <span>Built with Jac OSP · byLLM-ready · Tavily-ready</span>
-            </footer>
         </div>;
 }

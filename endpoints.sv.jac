@@ -361,6 +361,25 @@ def spans_are_exact(note: str, spans: list[str]) -> bool {
     return True;
 }
 
+def validated_note_candidate(
+    note: str,
+    candidate: NoteClassification,
+    fallback: NoteClassification
+) -> ContextClassificationView {
+    if not spans_are_exact(note, candidate.evidence_spans) {
+        return ContextClassificationView(
+            classification=fallback,
+            used_ai=False,
+            fell_back=True
+        );
+    }
+    return ContextClassificationView(
+        classification=candidate,
+        used_ai=True,
+        fell_back=False
+    );
+}
+
 def classify_note(note: str, mode: str = "synthetic") -> ContextClassificationView {
     fallback = deterministic_note_classification(note);
     if mode != "ai" or not openai_available() {
@@ -370,27 +389,45 @@ def classify_note(note: str, mode: str = "synthetic") -> ContextClassificationVi
             fell_back=False
         );
     }
-    try {
-        candidate = classify_call_note_llm(note);
-        if not spans_are_exact(note, candidate.evidence_spans) {
-            return ContextClassificationView(
-                classification=fallback,
-                used_ai=False,
-                fell_back=True
-            );
+    for attempt in range(2) {
+        try {
+            candidate = classify_call_note_llm(note);
+            return validated_note_candidate(note, candidate, fallback);
+        } except Exception {
+            if attempt == 0 {
+                time.sleep(0.05);
+            }
         }
-        return ContextClassificationView(
-            classification=candidate,
-            used_ai=True,
-            fell_back=False
-        );
-    } except Exception {
-        return ContextClassificationView(
-            classification=fallback,
-            used_ai=False,
-            fell_back=True
+    }
+    return ContextClassificationView(
+        classification=fallback,
+        used_ai=False,
+        fell_back=True
+    );
+}
+
+def parse_transfer_csv(csv_text: str) -> list[dict[str, str]] {
+    if len(csv_text.encode("utf-8")) > 1_000_000 {
+        raise ValueError("CSV exceeds the 1 MB limit");
+    }
+    reader = csv.DictReader(io.StringIO(csv_text));
+    required = {"transfer_id", "customer_name", "amount"};
+    fields = set([
+        str(field).strip().lower()
+        for field in (reader.fieldnames if reader.fieldnames else [])
+    ]);
+    if not required.issubset(fields) {
+        raise ValueError(
+            "CSV requires transfer_id, customer_name, and amount columns"
         );
     }
+    rows: list[dict[str, str]] = [
+        dict(csv_row) for csv_row in reader
+    ];
+    if not rows or len(rows) > 200 {
+        raise ValueError("CSV must contain between 1 and 200 rows");
+    }
+    return rows;
 }
 
 def score_accepted_signals(proposals: list[SignalProposal]) -> tuple[int, int, int] {
@@ -454,15 +491,6 @@ def find_case(case_key: str) -> InvestigationCase | None {
 def find_case_for_transfer(transfer_id: str) -> InvestigationCase | None {
     for item in [root -->][?:InvestigationCase] {
         if item.transfer_id == transfer_id and item.status != "confirmed_scam" {
-            return item;
-        }
-    }
-    return None;
-}
-
-def find_graph_node(node_key: str) -> any {
-    for item in [root -->] {
-        if hasattr(item, "key") and item.key == node_key {
             return item;
         }
     }
@@ -580,6 +608,16 @@ walker RecipientNetworkWalker {
         recipient = recipients[0] if recipients else None;
         recipient_key = recipient.key if recipient else "";
         peer_transfers = [recipient <-:RECEIVED:<-][?:Transfer] if recipient else [];
+        linked_recipients = (
+            [recipient ->:SHARES_IDENTITY_WITH:->][?:Account]
+            if recipient
+            else []
+        );
+        for linked_recipient in linked_recipients {
+            peer_transfers.extend(
+                [linked_recipient <-:RECEIVED:<-][?:Transfer]
+            );
+        }
         time.sleep(0.52);
         proposals: list[SignalProposal] = [];
         node_ids = [here.key];
@@ -587,6 +625,12 @@ walker RecipientNetworkWalker {
         if recipient {
             node_ids.append(recipient.key);
             edge_ids.append(f"{here.key}|RECEIVED|{recipient.key}");
+        }
+        for linked_recipient in linked_recipients {
+            node_ids.append(linked_recipient.key);
+            edge_ids.append(
+                f"{recipient_key}|SHARES_IDENTITY_WITH|{linked_recipient.key}"
+            );
         }
         for peer in peer_transfers {
             if peer.key != here.key and "FORWARD" not in peer.key {
@@ -952,7 +996,33 @@ def launch_investigator(
     investigator: str,
     mode: str
 ) -> any {
-    return flow run_named_investigator(transfer, investigator, mode);
+    return flow run_investigator_with_retry(
+        transfer,
+        investigator,
+        mode
+    );
+}
+
+def run_investigator_with_retry(
+    transfer: Transfer,
+    investigator: str,
+    mode: str,
+    attempts: int = 2
+) -> InvestigatorResult {
+    last_error = "";
+    for attempt in range(attempts) {
+        try {
+            return run_named_investigator(transfer, investigator, mode);
+        } except Exception as error {
+            last_error = str(error);
+            if attempt + 1 < attempts {
+                time.sleep(0.03);
+            }
+        }
+    }
+    raise RuntimeError(
+        f"{investigator} failed after {attempts} attempts: {last_error}"
+    );
 }
 
 def clear_case_results(case_node: InvestigationCase) {
@@ -993,7 +1063,7 @@ def apply_result(
         }
         signal_key = f"SIG-{case_node.key}-{proposal.category}";
         signal = (
-            root ++> ScamSignal(
+            case_node ++> ScamSignal(
                 key=signal_key,
                 category=proposal.category,
                 label=proposal.label,
@@ -1090,7 +1160,8 @@ def graph_views(
             GraphNodeView(id="ACC-BAYVIEW-001", kind="Account", label="Bayview Roofing", detail="Established merchant account", x=520, y=225, tone="cleared"),
             GraphNodeView(id="MERCHANT-BAYVIEW", kind="Merchant", label="Bayview Roofing LLC", detail="Verified since 2012", x=690, y=225, tone="cleared"),
             GraphNodeView(id="DEV-BAYVIEW-2", kind="Device", label="Known workstation", detail="Known business device", x=520, y=75, tone="cleared"),
-            GraphNodeView(id="CASE-HAROLD-5200", kind="InvestigationCase", label="Cleared by Skeptic", detail="20 / Allow", x=470, y=390, tone="cleared")
+            GraphNodeView(id="SIG-CASE-HAROLD-5200-behavior_anomaly", kind="ScamSignal", label="Behavior +20", detail="Unusual amount; retained but explained", x=360, y=400, tone="cleared"),
+            GraphNodeView(id="CASE-HAROLD-5200", kind="InvestigationCase", label="Cleared by Skeptic", detail="20 / Allow", x=570, y=400, tone="cleared")
         ];
         edges = [
             GraphEdgeView(id="CUST-HAROLD|OWNS|ACC-HAROLD-CHECKING", from_id="CUST-HAROLD", to_id="ACC-HAROLD-CHECKING", label="OWNS"),
@@ -1098,6 +1169,7 @@ def graph_views(
             GraphEdgeView(id="TX-HAROLD-5200|RECEIVED|ACC-BAYVIEW-001", from_id="TX-HAROLD-5200", to_id="ACC-BAYVIEW-001", label="RECEIVED"),
             GraphEdgeView(id="TX-HAROLD-5200|RECEIVED|MERCHANT-BAYVIEW", from_id="TX-HAROLD-5200", to_id="MERCHANT-BAYVIEW", label="RECEIVED"),
             GraphEdgeView(id="ACC-BAYVIEW-001|USES_DEVICE|DEV-BAYVIEW-2", from_id="ACC-BAYVIEW-001", to_id="DEV-BAYVIEW-2", label="USES_DEVICE"),
+            GraphEdgeView(id="SIG-CASE-HAROLD-5200-behavior_anomaly|INCLUDED_IN_CASE|CASE-HAROLD-5200", from_id="SIG-CASE-HAROLD-5200-behavior_anomaly", to_id="CASE-HAROLD-5200", label="INCLUDED IN CASE", tone="cleared"),
             GraphEdgeView(id="TX-HAROLD-5200|INCLUDED_IN_CASE|CASE-HAROLD-5200", from_id="TX-HAROLD-5200", to_id="CASE-HAROLD-5200", label="INCLUDED_IN_CASE")
         ];
         return (nodes, edges);
@@ -1116,8 +1188,13 @@ def graph_views(
         GraphNodeView(id="IP-RAVEN-185", kind="IPAddress", label="198.51.100.185", detail="Synthetic hosting-provider IP", x=700, y=80, tone="identity"),
         GraphNodeView(id="TX-RUTH-FORWARD-1", kind="Transfer", label="$3,936 forwarded", detail="82% · 11 minutes", x=730, y=225, tone="flow"),
         GraphNodeView(id="MERCHANT-ARCLIGHT", kind="Merchant", label="ArcLight Digital Assets", detail="crypto_off_ramp", x=885, y=225, tone="flow"),
-        GraphNodeView(id="CASE-2026-041", kind="InvestigationCase", label="CASE-2026-041", detail="Prior confirmed impersonation case_node", x=710, y=430, tone="risk"),
-        GraphNodeView(id="CASE-RUTH-4800", kind="InvestigationCase", label="Ruth case_node", detail="SafeWire intervention", x=470, y=470, tone="case_node")
+        GraphNodeView(id="CASE-2026-041", kind="InvestigationCase", label="CASE-2026-041", detail="Prior confirmed impersonation case", x=780, y=400, tone="risk"),
+        GraphNodeView(id="SIG-CASE-RUTH-4800-behavior_anomaly", kind="ScamSignal", label="Behavior +20", detail="9× normal and first-time payee", x=210, y=470, tone="risk"),
+        GraphNodeView(id="SIG-CASE-RUTH-4800-recipient_network", kind="ScamSignal", label="Network +25", detail="Five older senders converge", x=325, y=470, tone="risk"),
+        GraphNodeView(id="SIG-CASE-RUTH-4800-rapid_money_flow", kind="ScamSignal", label="Flow +25", detail="82% forwarded in 11 minutes", x=440, y=470, tone="flow"),
+        GraphNodeView(id="SIG-CASE-RUTH-4800-shared_identity", kind="ScamSignal", label="Identity +15", detail="Shared device and IP", x=555, y=470, tone="identity"),
+        GraphNodeView(id="SIG-CASE-RUTH-4800-scam_context", kind="ScamSignal", label="Context +11", detail="Exact urgency and secrecy spans", x=670, y=470, tone="risk"),
+        GraphNodeView(id="CASE-RUTH-4800", kind="InvestigationCase", label="Ruth case", detail="96 / Hold for analyst review", x=845, y=470, tone="case")
     ];
     edges = [
         GraphEdgeView(id="CUST-RUTH|OWNS|ACC-RUTH-CHECKING", from_id="CUST-RUTH", to_id="ACC-RUTH-CHECKING", label="OWNS"),
@@ -1135,6 +1212,12 @@ def graph_views(
         GraphEdgeView(id="CUST-ARTHUR|SENT|ACC-RAVEN-001", from_id="CUST-ARTHUR", to_id="ACC-RAVEN-001", label="$4,950", tone="risk"),
         GraphEdgeView(id="CUST-HELEN|SENT|ACC-RAVEN-002", from_id="CUST-HELEN", to_id="ACC-RAVEN-002", label="$4,650", tone="risk"),
         GraphEdgeView(id="CUST-SAMUEL|SENT|ACC-RAVEN-002", from_id="CUST-SAMUEL", to_id="ACC-RAVEN-002", label="$5,100", tone="risk")
+        ,
+        GraphEdgeView(id="SIG-CASE-RUTH-4800-behavior_anomaly|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="SIG-CASE-RUTH-4800-behavior_anomaly", to_id="CASE-RUTH-4800", label="INCLUDED", tone="risk"),
+        GraphEdgeView(id="SIG-CASE-RUTH-4800-recipient_network|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="SIG-CASE-RUTH-4800-recipient_network", to_id="CASE-RUTH-4800", label="INCLUDED", tone="risk"),
+        GraphEdgeView(id="SIG-CASE-RUTH-4800-rapid_money_flow|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="SIG-CASE-RUTH-4800-rapid_money_flow", to_id="CASE-RUTH-4800", label="INCLUDED", tone="flow"),
+        GraphEdgeView(id="SIG-CASE-RUTH-4800-shared_identity|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="SIG-CASE-RUTH-4800-shared_identity", to_id="CASE-RUTH-4800", label="INCLUDED", tone="identity"),
+        GraphEdgeView(id="SIG-CASE-RUTH-4800-scam_context|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="SIG-CASE-RUTH-4800-scam_context", to_id="CASE-RUTH-4800", label="INCLUDED", tone="risk")
     ];
     return (nodes, edges);
 }
@@ -1195,6 +1278,19 @@ def delta_for_result(
     (all_nodes, all_edges) = graph_views(transfer_id);
     wanted_nodes = set(result.discovered_node_ids);
     wanted_edges = set(result.discovered_edge_ids);
+    case_key = (
+        "CASE-HAROLD-5200"
+        if transfer_id == "TX-HAROLD-5200"
+        else "CASE-RUTH-4800"
+    );
+    for proposal in result.proposals {
+        signal_id = f"SIG-{case_key}-{proposal.category}";
+        wanted_nodes.add(signal_id);
+        wanted_nodes.add(case_key);
+        wanted_edges.add(
+            f"{signal_id}|INCLUDED_IN_CASE|{case_key}"
+        );
+    }
     nodes = [
         node_view_dict(view_node)
         for view_node in all_nodes
@@ -1606,26 +1702,7 @@ walker:pub ImportTransferCsv {
         reports: list[ImportResult] = [];
 
     can import_rows with Root entry {
-        if len(self.csv_text.encode("utf-8")) > 1_000_000 {
-            raise ValueError("CSV exceeds the 1 MB limit");
-        }
-        reader = csv.DictReader(io.StringIO(self.csv_text));
-        required = {"transfer_id", "customer_name", "amount"};
-        fields = set([
-            str(field).strip().lower()
-            for field in (reader.fieldnames if reader.fieldnames else [])
-        ]);
-        if not required.issubset(fields) {
-            raise ValueError(
-                "CSV requires transfer_id, customer_name, and amount columns"
-            );
-        }
-        rows: list[dict[str, str]] = [
-            dict(csv_row) for csv_row in reader
-        ];
-        if not rows or len(rows) > 200 {
-            raise ValueError("CSV must contain between 1 and 200 rows");
-        }
+        rows = parse_transfer_csv(self.csv_text);
         imported = 0;
         merged = 0;
         partial = 0;
@@ -1670,7 +1747,7 @@ walker:pub ImportTransferCsv {
             case_node = (
                 here ++> InvestigationCase(
                     key=case_key,
-                    title=f"{str(row.get('customer_name', 'Uploaded case_node'))} · ${amount:,.0f}",
+                    title=f"{str(row.get('customer_name', 'Uploaded case'))} · ${amount:,.0f}",
                     transfer_id=transfer_id,
                     subject=str(row.get("customer_name", "Uploaded customer")),
                     legacy_score=0,
@@ -1713,16 +1790,19 @@ def:pub investigate_transfer_stream(
     mode: str,
     request_id: str
 ) -> Generator {
+    captured_transfer = find_transfer(transfer_id);
+    captured_case = find_case_for_transfer(transfer_id);
+
     def stream -> Generator[str, None, None] {
         actual_request_id = request_id if request_id else str(uuid.uuid4());
-        transfer = find_transfer(transfer_id);
-        case_node = find_case_for_transfer(transfer_id);
+        transfer = captured_transfer;
+        case_node = captured_case;
         if not transfer or not case_node {
             yield event_json(
                 "worker_failed",
                 actual_request_id,
                 transfer_id,
-                message="Transfer or case_node not found"
+                message="Transfer or case not found"
             );
             return;
         }
