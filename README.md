@@ -1,131 +1,151 @@
-# Meridian
+# SafeWire
 
-Meridian screens a bond watchlist for hidden credit risk before market open.
-Under the hood, its Jac-native diligence workspace fans one research walker out
-per issuer, stores every sourced claim in a persistent evidence graph, scores
-only corroborated risk signals, and produces a ranked review.
+SafeWire helps community-bank fraud analysts stop suspicious transfers before an
+elder scammer moves the money, while preserving human review and the customer
+relationship.
 
-The reliable demo needs no API keys. It ships with an illustrative eight-issuer
-evidence snapshot so the complete research, concurrency, scoring, CSV,
-persistence, and export workflow can be judged offline.
+The demonstration is fully synthetic and works without API keys. Five
+specialized Jac investigators traverse separate paths through a persistent
+fraud graph in parallel. A skeptic then looks for legitimate explanations
+before an intervention policy produces an analyst-facing recommendation.
 
-> Research prototype only. The seeded evidence is illustrative and is not
-> investment advice.
+## The two-minute demo
 
-## What works
+1. Run SafeWire and open [http://localhost:8000](http://localhost:8000).
+2. Select **Ruth Bennett** and click **Investigate transfer**.
+3. Watch real investigator results stream into the graph.
+4. Compare the measured parallel wall time with the sum of the five worker
+   times.
+5. Select **Harold Kim** and run the same investigation to see the skeptic clear
+   a documented roofing payment.
 
-- Real concurrent Jac flows for issuer research—eight workers complete near the
-  slowest worker time rather than the sum of all worker times. The UI displays
-  both measured values and the resulting speedup beside **Run diligence**.
-- Persistent OSP graph: batch → issuers → attributes, signals, comparables, and
-  generated report.
-- Deterministic weighted risk score with a two-independent-signal flagging rule.
-- Five source-bound evidence fields per seeded issuer, with citation URLs,
-  excerpts, confidence, and capture time.
-- Institutional data-room UI written in Jac: execution mesh, ranking table,
-  evidence drawer, report view, search, reset, CSV ingestion, and exports.
-- Capability-gated Tavily + OpenAI/byLLM live mode with seeded fallback.
-- CSV validation for required names, duplicate identities, row limits, and file
-  size.
-- Automated unit/concurrency tests and a repository guard requiring more than
-  50% Jac.
+Expected outcomes:
 
-## Quick start
+| Case | Legacy result | SafeWire result | Why |
+| --- | --- | --- | --- |
+| Ruth Bennett, $4,800 | 24 · Allow | **96 · Hold for analyst review** | Five independently sourced signals; call using the verified number on file |
+| Harold Kim, $5,200 | 18 · Allow | **20 · Allow** | Matching invoice, established merchant, and no linked recipient network |
+
+No account is frozen, no payment is moved, and no customer or relative is
+contacted. Analyst actions are persisted simulations only.
+
+## Start locally
 
 Python 3.12 is recommended.
 
 ```bash
-git clone https://github.com/sathvik-gorle/meridian-jac.git
-cd meridian-jac
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 jac install
 jac start -d -p 8000 main.jac
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Click **Run diligence** to
-execute the seeded mesh. The Jac API runs on port 8001 while development mode is
-active.
+The client and its relative Jac API routes are served from
+`http://localhost:8000`.
 
-## Demo path
+Generated graph data lives under `.jac/` and is ignored by Git. Use the reset
+button in the header to recreate the synthetic workspace.
 
-1. Open the workspace; the persisted or newly seeded eight-issuer batch loads.
-2. Click **Run diligence**. Jac launches one real flow per issuer and waits for
-   the results before mutating the graph. Beside the button, compare measured
-   parallel wall time with how long the same workers would take one-by-one.
-3. Select a ranked issuer to inspect its five evidence records, source links,
-   signals, score contributions, and comparable instruments.
-4. Open **Report** to inspect or download the generated Markdown memorandum.
-5. Export the current ranking as CSV.
-6. Use **Upload entity CSV** with
-   [`fixtures/sample_entities.csv`](fixtures/sample_entities.csv) to exercise
-   validation and custom-batch persistence.
+## Why Jac
 
-Custom issuers that do not match the seeded evidence set remain explicit partial
-records in demo mode; live mode is intended for researching arbitrary names.
+The data model is a persistent graph of customers, accounts, transfers, payees,
+devices, IP addresses, authorized users, merchants, signals, and investigation
+cases. Typed edges describe ownership, payment movement, shared identity
+infrastructure, downstream forwarding, and case evidence.
 
-## Optional live mode
+The orchestrator launches these five read-only traversals before awaiting any
+result:
 
-Copy the example environment file and add both keys:
+- `BehaviorBaselineWalker`
+- `RecipientNetworkWalker`
+- `MoneyFlowWalker`
+- `IdentityLinkWalker`
+- `ScamContextWalker`
+
+Each returns a typed `InvestigatorResult`. Results are applied to the graph
+serially, avoiding shared-write races. `SkepticWalker` then suppresses
+correlated evidence and searches for invoices, established relationships, and
+merchant identity. `InterventionWalker` applies the constrained decision policy
+and generates the case file.
+
+The UI consumes buffered server-sent events from
+`investigate_transfer_stream`, merging graph deltas only when real walkers
+finish. The timing card reports both measured wall time and summed worker time,
+making the concurrency directly inspectable.
+
+## Decision policy
+
+Risk contributions are capped by category:
+
+- Behavior anomaly: 20
+- Recipient network: 25
+- Rapid money flow: 25
+- Shared identity infrastructure: 15
+- Scam context: 15
+
+A hold requires a score of at least 50, two accepted signal categories, and two
+distinct evidence families. Scores from 30–49 or cases without sufficient
+corroboration require step-up verification. Lower scores and positively
+verified decoys are allowed.
+
+## Optional AI-assisted note review
+
+SafeWire never needs a model for the complete demo. Deterministic exact-span
+matching handles the supplied call note by default.
+
+To enable optional note-only classification:
 
 ```bash
 cp .env.example .env
-export OPENAI_API_KEY="..."
-export TAVILY_API_KEY="..."
-export BYLLM_DEFAULT_MODEL="openai/gpt-5.6-luna"
-jac start -d -p 8000 main.jac
+# Add a newly issued OPENAI_API_KEY to .env locally.
 ```
 
-Meridian enables the live-mode control only when both credentials are present.
-Tavily results are passed to typed byLLM extraction and classification
-functions. A fact is accepted only when its evidence index resolves to one of
-the supplied search results and its URL is HTTP(S); fewer than three accepted
-facts causes a seeded fallback when one exists. Live calls are intentionally not
-part of CI and should be tested with budget-limited credentials.
+Only the supplied call note may be classified. Accepted spans must be exact
+substrings of that note. Invalid output, unavailable credentials, rate limits,
+or API errors fall back to deterministic classification.
 
-## Scoring
+Never paste credentials into chat or commit `.env`.
 
-| Signal | Weight |
-|---|---:|
-| Credit rating changes | 25% |
-| Borrowing cost vs peers | 25% |
-| Legal exposure | 20% |
-| Lender protections | 15% |
-| Missing disclosures | 15% |
+## CSV import
 
-Each contribution is `weight × severity`, where severity is clamped to 0–1.
-Meridian flags an issuer only when the score is at least 50 and at least two
-independent signal categories are present.
+Use `fixtures/safewire/incoming_transfers.csv` as the example format. Uploads
+are limited to 200 rows and 1 MB. Stable identifiers merge existing entities;
+duplicates are rejected; missing relationships remain visibly partial instead
+of being invented.
 
-## Architecture
+## Public interfaces
 
-```mermaid
-flowchart LR
-    UI["Jac client workspace"] --> O["Orchestrator walker"]
-    O --> F1["Issuer flow 1"]
-    O --> F2["Issuer flow 2"]
-    O --> FN["Issuer flow N"]
-    F1 --> R["EntityResearcher walker"]
-    F2 --> R
-    FN --> R
-    R --> G["Persistent OSP evidence graph"]
-    G --> S["Deterministic scorer"]
-    S --> P["Reporter walker"]
-    P --> UI
+- `CreateDemoWorkspace`
+- `ImportTransferCsv`
+- `GetCommandCenter`
+- `GetCaseDetail`
+- `GetCapabilities`
+- `RecordAnalystDecision`
+- `ResetWorkspace`
+- `investigate_transfer_stream`
+
+Mutation and run interfaces require request IDs to prevent duplicate execution.
+The main typed views are `CommandCenterBundle`, `CaseDetail`,
+`InvestigatorResult`, `GraphNodeView`, `GraphEdgeView`,
+`InvestigationEvent`, and `CapabilityView`.
+
+## Verify
+
+```bash
+jac check -p -n main.jac endpoints.sv.jac frontend.cl.jac
+jac test test_safewire.jac
+bash scripts/check_jac_share.sh
 ```
 
-The network-bound research happens concurrently in flows. Graph writes happen
-through walkers after flow completion, keeping persistence deterministic and
-avoiding shared-write races.
+CI runs the same checks. The source-share guard fails unless Jac remains more
+than 50% of implementation source bytes.
 
-Core source:
+## Synthetic-data and safety notice
 
-- [`endpoints.sv.jac`](endpoints.sv.jac) — graph schema, live evidence adapter,
-  scoring, persistence, flows, and walkers.
-- [`frontend.cl.jac`](frontend.cl.jac) — the complete interactive client.
-- [`main.jac`](main.jac) — full-stack entry point.
-- [`test_meridian.jac`](test_meridian.jac) — fixture, scoring, corroboration, and
-  concurrency tests.
-- [`fixtures/demo_evidence.json`](fixtures/demo_evidence.json) — frozen,
-  illustrative no-key demo evidence.
+All names, accounts, addresses, devices, infrastructure, case identifiers, call
+notes, transactions, and evidence in this repository are fictional
+demonstration fixtures. SafeWire is analyst decision support, not an autonomous
+banking-control system.
+
+See [UPSTREAM.md](UPSTREAM.md) for snapshot provenance.
