@@ -96,6 +96,7 @@
     {"kind": "AUTHORIZED_ON", "from": "AUTH-BAYVIEW", "to": "ACC-BAYVIEW-001"},
     {"kind": "SHARES_IDENTITY_WITH", "from": "ACC-RAVEN-001", "to": "ACC-RAVEN-002"},
     {"kind": "INCLUDED_IN_CASE", "from": "ACC-RAVEN-001", "to": "CASE-2026-041"},
+    {"kind": "INCLUDED_IN_CASE", "from": "ACC-RAVEN-002", "to": "CASE-2026-041"},
     {"kind": "INCLUDED_IN_CASE", "from": "TX-RUTH-4800", "to": "CASE-RUTH-4800"},
     {"kind": "INCLUDED_IN_CASE", "from": "TX-HAROLD-5200", "to": "CASE-HAROLD-5200"}
   ]

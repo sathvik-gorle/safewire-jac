@@ -114,6 +114,82 @@ def signal_plain_language(category: str) -> str {
     return labels.get(category, "Independent fraud-risk category");
 }
 
+def is_discovery_node(transfer_id: str, node_id: str) -> bool {
+    paths = {
+        "TX-RUTH-4800": {
+            "TX-RUTH-4800", "ACC-RAVEN-001", "DEV-RAVEN-7",
+            "ACC-RAVEN-002", "CASE-2026-041",
+            "TX-RUTH-FORWARD-1", "MERCHANT-ARCLIGHT"
+        },
+        "TX-HAROLD-5200": {
+            "TX-HAROLD-5200", "ACC-BAYVIEW-001",
+            "DEV-BAYVIEW-2", "MERCHANT-BAYVIEW"
+        }
+    };
+    return node_id in paths.get(transfer_id, set());
+}
+
+def is_discovery_edge(transfer_id: str, edge_id: str) -> bool {
+    paths = {
+        "TX-RUTH-4800": {
+            "TX-RUTH-4800|RECEIVED|ACC-RAVEN-001",
+            "ACC-RAVEN-001|USES_DEVICE|DEV-RAVEN-7",
+            "ACC-RAVEN-002|USES_DEVICE|DEV-RAVEN-7",
+            "ACC-RAVEN-002|INCLUDED_IN_CASE|CASE-2026-041",
+            "TX-RUTH-4800|FORWARDED_TO|TX-RUTH-FORWARD-1",
+            "TX-RUTH-FORWARD-1|RECEIVED|MERCHANT-ARCLIGHT"
+        },
+        "TX-HAROLD-5200": {
+            "TX-HAROLD-5200|RECEIVED|ACC-BAYVIEW-001",
+            "ACC-BAYVIEW-001|USES_DEVICE|DEV-BAYVIEW-2",
+            "TX-HAROLD-5200|RECEIVED|MERCHANT-BAYVIEW"
+        }
+    };
+    return edge_id in paths.get(transfer_id, set());
+}
+
+def discovery_lanes(transfer_id: str) -> list[dict] {
+    if transfer_id == "TX-HAROLD-5200" {
+        return [
+            {
+                "label": "Identity verification path",
+                "steps": [
+                    {"id": "TX-HAROLD-5200", "relation": "START", "label": "$5,200 transfer"},
+                    {"id": "ACC-BAYVIEW-001", "relation": "RECEIVED", "label": "Established account"},
+                    {"id": "DEV-BAYVIEW-2", "relation": "USES DEVICE", "label": "Known workstation"}
+                ]
+            },
+            {
+                "label": "Legitimate-purpose path",
+                "steps": [
+                    {"id": "TX-HAROLD-5200", "relation": "START", "label": "Invoice INV-8842"},
+                    {"id": "MERCHANT-BAYVIEW", "relation": "RECEIVED", "label": "Verified merchant since 2012"}
+                ]
+            }
+        ];
+    }
+    return [
+        {
+            "label": "Identity-to-prior-case path",
+            "steps": [
+                {"id": "TX-RUTH-4800", "relation": "START", "label": "$4,800 transfer"},
+                {"id": "ACC-RAVEN-001", "relation": "RECEIVED", "label": "Mule account · 4419"},
+                {"id": "DEV-RAVEN-7", "relation": "USES DEVICE", "label": "Shared device 7D91"},
+                {"id": "ACC-RAVEN-002", "relation": "SHARED BY", "label": "Second mule · 8302"},
+                {"id": "CASE-2026-041", "relation": "IN PRIOR CASE", "label": "Confirmed scam case"}
+            ]
+        },
+        {
+            "label": "Money-movement path",
+            "steps": [
+                {"id": "TX-RUTH-4800", "relation": "START", "label": "$4,800 transfer"},
+                {"id": "TX-RUTH-FORWARD-1", "relation": "FORWARDED_TO", "label": "$3,936 · 11 minutes"},
+                {"id": "MERCHANT-ARCLIGHT", "relation": "RECEIVED", "label": "Crypto off-ramp"}
+            ]
+        }
+    ];
+}
+
 def find_view_node(
     views: list[GraphNodeView],
     node_id: str
@@ -529,6 +605,16 @@ def:pub app -> JsxElement {
         detail.signals if detail else [],
         key=lambda (signal: ScamSignal) { return -signal.contribution; }
     );
+    acceptedSignals = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "accepted"
+    ];
+    suppressedSignals = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "suppressed"
+    ];
+    activeTransferId = activeTransfer.key if activeTransfer else "";
+    activeDiscoveryLanes = discovery_lanes(activeTransferId);
     selectedGraphNode = find_view_node(graphNodes, selectedNodeId);
     hasTiming = bool(
         activeCase
@@ -589,7 +675,7 @@ def:pub app -> JsxElement {
                                 {(
                                     "Only supplied note is sent"
                                     if runMode == "ai"
-                                    else "No keys · no real customer data"
+                                    else "Offline fixtures · no real customer data"
                                 )}
                             </small>
                         </div>
@@ -710,16 +796,16 @@ def:pub app -> JsxElement {
                     <main className="investigation-main">
                         <section className="hero-panel">
                             <div className="hero-copy">
-                                <div className="eyebrow">Stop the transfer, preserve the relationship</div>
+                                <div className="eyebrow">Graph-native elder scam intervention</div>
                                 <h1>
-                                    Screen suspicious transfers before an elder
-                                    scammer moves the money.
+                                    Legacy systems score one transfer. SafeWire
+                                    investigates the network behind it.
                                 </h1>
                                 <p>
-                                    SafeWire connects customer behavior, recipient
-                                    networks, money movement, identity infrastructure,
-                                    and the customer's own words—then forces a skeptic
-                                    check before recommending intervention.
+                                    Watch exact accounts, transfers, devices, merchants,
+                                    and prior cases appear only when a specialized Jac
+                                    walker discovers them—then see the skeptic challenge
+                                    every signal before intervention.
                                 </p>
                             </div>
                             <div className="hero-controls">
@@ -800,19 +886,6 @@ def:pub app -> JsxElement {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="score-comparison">
-                                    <div className="legacy-score">
-                                        <span>Legacy rules</span>
-                                        <strong>{activeCase.legacy_score}</strong>
-                                        <small>{activeCase.legacy_decision}</small>
-                                    </div>
-                                    <ArrowRight size={20}/>
-                                    <div className={"safewire-score " + score_tone(activeCase.safewire_score)}>
-                                        <span>SafeWire</span>
-                                        <strong>{activeCase.safewire_score}</strong>
-                                        <small>{activeCase.decision}</small>
-                                    </div>
-                                </div>
                                 <div className={"recommendation-card " + ("clear" if activeCase.cleared_by_skeptic else "")}>
                                     {if activeCase.cleared_by_skeptic {
                                         <CheckCircle2 key="clear-icon" size={20}/>
@@ -832,6 +905,68 @@ def:pub app -> JsxElement {
                                 </div>
                             </section>
                         }}
+
+                        <section className="discovery-panel">
+                            <div className="section-heading discovery-heading">
+                                <div>
+                                    <div className="eyebrow">Undeniable multi-hop discovery</div>
+                                    <h2>The investigation is the graph</h2>
+                                    <p>
+                                        Unrevealed nodes remain locked. Each exact node
+                                        appears only after its walker returns.
+                                    </p>
+                                </div>
+                                <span className="path-proof">
+                                    <Network size={14}/>
+                                    {len([
+                                        node for node in graphNodes
+                                        if is_discovery_node(activeTransferId, node.id)
+                                    ])} path nodes revealed
+                                </span>
+                            </div>
+                            <div className="discovery-lanes">
+                                {for lane in activeDiscoveryLanes {
+                                    <div key={str(lane["label"])} className="discovery-lane">
+                                        <strong className="lane-label">{lane["label"]}</strong>
+                                        <div className="lane-steps">
+                                            {for (index, step) in enumerate(lane["steps"]) {
+                                                revealed = bool(
+                                                    find_view_node(
+                                                        graphNodes,
+                                                        str(step["id"])
+                                                    )
+                                                );
+                                                if index > 0 {
+                                                    <div key={str(step["id"]) + "-relation"} className={"path-relation " + ("revealed" if revealed else "")}>
+                                                        <ArrowRight size={13}/>
+                                                        <span>{step["relation"]}</span>
+                                                    </div>
+                                                }
+                                                <button
+                                                    key={str(step["id"])}
+                                                    className={"path-step " + ("revealed" if revealed else "locked")}
+                                                    disabled={not revealed}
+                                                    onClick={lambda {
+                                                        selectedNodeId = str(step["id"]);
+                                                        activeTab = "connections";
+                                                    }}
+                                                >
+                                                    <span>
+                                                        {if revealed {
+                                                            <Check key="revealed" size={12}/>
+                                                        } else {
+                                                            <CircleDot key="locked" size={12}/>
+                                                        }}
+                                                        {step["label"]}
+                                                    </span>
+                                                    <code>{step["id"]}</code>
+                                                </button>
+                                            }}
+                                        </div>
+                                    </div>
+                                }}
+                            </div>
+                        </section>
 
                         <section className="workers-panel">
                             <div className="section-heading">
@@ -884,11 +1019,11 @@ def:pub app -> JsxElement {
                         <section className="graph-panel">
                             <div className="section-heading graph-heading">
                                 <div>
-                                    <div className="eyebrow">Live investigation network</div>
-                                    <h2>Graph expands as real walkers finish</h2>
+                                    <div className="eyebrow">Live investigation · not a static diagram</div>
+                                    <h2>Watch the evidence path assemble</h2>
                                     <p>
-                                        Click a node to inspect it. Edge labels show the
-                                        typed relationship each walker traversed.
+                                        Nodes and labeled edges stream from completed
+                                        walkers. Click any exact node to inspect its links.
                                     </p>
                                 </div>
                                 <div className="graph-stats">
@@ -908,7 +1043,20 @@ def:pub app -> JsxElement {
                                         if source and target {
                                             midX = (source.x + target.x) / 2.0;
                                             midY = (source.y + target.y) / 2.0;
-                                            <g key={view_edge.id} className={"graph-edge " + view_edge.tone}>
+                                            <g
+                                                key={view_edge.id}
+                                                className={
+                                                    "graph-edge " + view_edge.tone
+                                                    + (
+                                                        " discovery-edge"
+                                                        if is_discovery_edge(
+                                                            activeTransferId,
+                                                            view_edge.id
+                                                        )
+                                                        else ""
+                                                    )
+                                                }
+                                            >
                                                 <line
                                                     x1={source.x}
                                                     y1={source.y}
@@ -926,6 +1074,14 @@ def:pub app -> JsxElement {
                                             key={view_node.id}
                                             className={
                                                 "graph-node " + view_node.tone
+                                                + (
+                                                    " discovery-node"
+                                                    if is_discovery_node(
+                                                        activeTransferId,
+                                                        view_node.id
+                                                    )
+                                                    else ""
+                                                )
                                                 + (" selected" if selectedNodeId == view_node.id else "")
                                             }
                                             transform={"translate(" + str(view_node.x) + " " + str(view_node.y) + ")"}
@@ -957,6 +1113,33 @@ def:pub app -> JsxElement {
                                 </div>
                             </div>
                         </section>
+
+                        {if detail {
+                            <section key="score-outcome" className="score-panel">
+                                <div>
+                                    <div className="eyebrow">Score comes after investigation</div>
+                                    <h2>Decision after the network and skeptic review</h2>
+                                    <p>
+                                        {len(acceptedSignals)} accepted categories · {
+                                            len(suppressedSignals)
+                                        } correlated clues suppressed
+                                    </p>
+                                </div>
+                                <div className="score-comparison">
+                                    <div className="legacy-score">
+                                        <span>Legacy · one transfer</span>
+                                        <strong>{activeCase.legacy_score}</strong>
+                                        <small>{activeCase.legacy_decision}</small>
+                                    </div>
+                                    <ArrowRight size={20}/>
+                                    <div className={"safewire-score " + score_tone(activeCase.safewire_score)}>
+                                        <span>SafeWire · network</span>
+                                        <strong>{activeCase.safewire_score}</strong>
+                                        <small>{activeCase.decision}</small>
+                                    </div>
+                                </div>
+                            </section>
+                        }}
                     </main>
 
                     <aside className="evidence-drawer">
@@ -971,9 +1154,10 @@ def:pub app -> JsxElement {
                                     )}
                                 </h2>
                             </div>
-                            {if activeCase {
-                                <span key="drawer-score" className={"drawer-score " + score_tone(activeCase.safewire_score)}>
-                                    {activeCase.safewire_score}
+                            {if activeCase and activeCase.status == "completed" {
+                                <span key="drawer-verdict" className="drawer-verdict">
+                                    <b>{len(acceptedSignals)} accepted</b>
+                                    <small>{len(suppressedSignals)} suppressed</small>
                                 </span>
                             }}
                         </div>
@@ -1005,13 +1189,28 @@ def:pub app -> JsxElement {
                                 <div key="signals" className="signal-list">
                                     <div className="plain-language-note">
                                         <Info size={15}/>
-                                        Five weighted risk categories, each independently
-                                        corroborated before a hold is recommended.
+                                        Every candidate signal shows the explanation
+                                        SkepticWalker tested and whether it survived.
                                     </div>
                                     {for signal in signals {
-                                            <article key={signal.key} className="signal-card">
+                                            <article
+                                                key={signal.key}
+                                                className={
+                                                    "signal-card "
+                                                    + signal.skeptic_disposition
+                                                }
+                                            >
                                                 <div className="signal-top">
-                                                    <span>+{signal.contribution}</span>
+                                                    <span>
+                                                        {(
+                                                            "+" + str(signal.contribution)
+                                                            if signal.contribution > 0
+                                                            else "NO SCORE"
+                                                        )}
+                                                    </span>
+                                                    <b className={"disposition-badge " + signal.skeptic_disposition}>
+                                                        {signal.skeptic_disposition}
+                                                    </b>
                                                     <small>{signal.investigator}</small>
                                                 </div>
                                                 <h3>{signal.label}</h3>
@@ -1019,9 +1218,21 @@ def:pub app -> JsxElement {
                                                 <div className="explain-chip">
                                                     {signal_plain_language(signal.category)}
                                                 </div>
+                                                <div className="skeptic-test">
+                                                    <span>Skeptic tested</span>
+                                                    <p>
+                                                        {(
+                                                            signal.skeptic_explanation
+                                                            if signal.skeptic_explanation
+                                                            else "Pending skeptic review."
+                                                        )}
+                                                    </p>
+                                                </div>
                                                 <footer>
                                                     {len(signal.evidence_families)} source families
-                                                    <b>{signal.skeptic_disposition}</b>
+                                                    <code>
+                                                        {len(signal.supporting_graph_node_ids)} exact nodes
+                                                    </code>
                                                 </footer>
                                             </article>
                                     }}
@@ -1078,6 +1289,24 @@ def:pub app -> JsxElement {
                                             <Check size={15}/>{finding}
                                         </div>
                                     }}
+                                    <div className="skeptic-ledger">
+                                        <div className="eyebrow">Signal-by-signal disposition</div>
+                                        {for signal in signals {
+                                            <article key={signal.key}>
+                                                <b className={"disposition-badge " + signal.skeptic_disposition}>
+                                                    {signal.skeptic_disposition}
+                                                </b>
+                                                <strong>{signal.label}</strong>
+                                                <p>
+                                                    {(
+                                                        signal.skeptic_explanation
+                                                        if signal.skeptic_explanation
+                                                        else "Pending skeptic review."
+                                                    )}
+                                                </p>
+                                            </article>
+                                        }}
+                                    </div>
                                 </div>
                             } elif activeTab == "connections" {
                                 <div key="connections" className="connections-panel">

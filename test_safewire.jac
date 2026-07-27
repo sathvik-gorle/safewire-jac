@@ -27,6 +27,7 @@ import from endpoints {
     clear_case_results,
     run_named_investigator,
     apply_result,
+    apply_skeptic_review,
     build_case_file,
     launch_investigator,
     event_json
@@ -244,6 +245,7 @@ test "full Ruth orchestration persists score callback timings and export" {
     skeptic = ruth spawn SkepticWalker();
     assert skeptic.result is not None;
     case_node.skeptic_findings = skeptic.result.clearing_findings;
+    apply_skeptic_review(case_node, ruth);
     apply_result(case_node, skeptic.result);
     intervention = case_node spawn InterventionWalker();
     assert intervention.result is not None;
@@ -253,12 +255,26 @@ test "full Ruth orchestration persists score callback timings and export" {
     ]);
     case_node.generated_case_file = build_case_file(case_node, ruth);
     signals = [case_node <-:INCLUDED_IN_CASE:<-][?:ScamSignal];
+    accepted = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "accepted"
+    ];
+    suppressed = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "suppressed"
+    ];
     assert case_node.safewire_score == 96;
     assert case_node.decision == "Hold for analyst review";
     assert case_node.callback_recommended;
-    assert len(signals) == 5;
+    assert len(accepted) == 5;
+    assert len(suppressed) == 1;
+    assert all([
+        bool(signal.skeptic_explanation)
+        for signal in signals
+    ]);
     assert len(case_node.worker_times) == 7;
     assert "Call customer using verified number on file" in case_node.generated_case_file;
+    assert "Suppressed correlated clues" in case_node.generated_case_file;
     assert "no banking action was executed" in case_node.generated_case_file;
 }
 
@@ -280,6 +296,7 @@ test "full Harold orchestration preserves 20 and clears the verified decoy" {
     assert skeptic.result is not None;
     case_node.skeptic_findings = skeptic.result.clearing_findings;
     case_node.cleared_by_skeptic = True;
+    apply_skeptic_review(case_node, transfer);
     apply_result(case_node, skeptic.result);
     intervention = case_node spawn InterventionWalker();
     assert intervention.result is not None;
@@ -290,6 +307,8 @@ test "full Harold orchestration preserves 20 and clears the verified decoy" {
     assert case_node.decision == "Allow";
     assert case_node.cleared_by_skeptic;
     assert len(signals) == 1;
+    assert signals[0].skeptic_disposition == "accepted";
+    assert "INV-8842" in signals[0].skeptic_explanation;
     assert "INV-8842" in "\n".join(case_node.skeptic_findings);
     assert "established, verified merchant" in "\n".join(case_node.skeptic_findings);
     assert "Cleared by Skeptic" in case_node.generated_case_file;

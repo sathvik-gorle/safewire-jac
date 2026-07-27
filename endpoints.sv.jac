@@ -1,6 +1,7 @@
 """SafeWire server: persistent fraud graph, concurrent investigators, and SSE."""
 
 import csv;
+import dotenv;
 import io;
 import json;
 import os;
@@ -95,7 +96,8 @@ node ScamSignal {
         rationale: str,
         supporting_graph_node_ids: list[str] = [],
         evidence_families: list[str] = [],
-        skeptic_disposition: str = "accepted";
+        skeptic_disposition: str = "accepted",
+        skeptic_explanation: str = "";
 }
 
 node InvestigationCase {
@@ -304,6 +306,10 @@ def load_demo_graph -> dict {
 }
 
 def openai_available -> bool {
+    dotenv.load_dotenv(
+        os.path.join(os.path.dirname(__file__), ".env"),
+        override=False
+    );
     return bool(os.environ.get("OPENAI_API_KEY"));
 }
 
@@ -875,6 +881,10 @@ walker SkepticWalker {
                 "No invoice, prior payee relationship, or established merchant "
                 "identity explains the transfer."
             );
+            findings.append(
+                "Suppressed one correlated recipient/device clue so the same "
+                "two-account mule cluster is not counted twice."
+            );
         }
         time.sleep(0.18);
         self.result = InvestigatorResult(
@@ -883,7 +893,7 @@ walker SkepticWalker {
             summary=(
                 "Legitimate invoice and merchant history explain the payment."
                 if here.key == "TX-HAROLD-5200"
-                else "Independent signals survive correlation and explanation checks."
+                else "Five independent signals survive; one correlated clue is suppressed."
             ),
             clearing_findings=findings,
             discovered_node_ids=(
@@ -894,7 +904,10 @@ walker SkepticWalker {
             discovered_edge_ids=(
                 [f"{here.key}|RECEIVED|MERCHANT-BAYVIEW"]
                 if here.key == "TX-HAROLD-5200"
-                else ["ACC-RAVEN-001|INCLUDED_IN_CASE|CASE-2026-041"]
+                else [
+                    "ACC-RAVEN-001|INCLUDED_IN_CASE|CASE-2026-041",
+                    "ACC-RAVEN-002|INCLUDED_IN_CASE|CASE-2026-041"
+                ]
             )
         );
     }
@@ -1081,11 +1094,104 @@ def apply_result(
     }
 }
 
+def skeptic_test_for(transfer_id: str, category: str) -> str {
+    if transfer_id == "TX-HAROLD-5200" {
+        return (
+            "Tested invoice INV-8842, the prior merchant relationship, and "
+            "Bayview Roofing's verified identity. The amount anomaly remains "
+            "visible, but the documented payment is cleared."
+        );
+    }
+    tests = {
+        "behavior_anomaly": (
+            "Tested prior payee history and Ruth's normal transfer range. "
+            "No prior relationship explains a first-time payment at 9× baseline."
+        ),
+        "recipient_network": (
+            "Tested whether shared infrastructure was inflating the victim count. "
+            "Four distinct customer-ledger transfers remain independently visible."
+        ),
+        "rapid_money_flow": (
+            "Tested normal merchant settlement timing. 82% still reaches an "
+            "unverified digital-asset off-ramp within 11 minutes."
+        ),
+        "shared_identity": (
+            "Tested household and authorized-user explanations. Two separately "
+            "controlled recipient accounts still reuse device 7D91 and one IP."
+        ),
+        "scam_context": (
+            "Tested whether the language was inferred or injected. Every accepted "
+            "urgency and secrecy phrase is an exact span from Ruth's supplied note."
+        )
+    };
+    return tests.get(
+        category,
+        "Tested as correlated evidence and suppressed to prevent double counting."
+    );
+}
+
+def apply_skeptic_review(
+    case_node: InvestigationCase,
+    transfer: Transfer
+) {
+    signals = [case_node <-:INCLUDED_IN_CASE:<-][?:ScamSignal];
+    for signal in signals {
+        signal.skeptic_disposition = "accepted";
+        signal.skeptic_explanation = skeptic_test_for(
+            transfer.key,
+            signal.category
+        );
+    }
+    if transfer.key != "TX-RUTH-4800" {
+        return;
+    }
+    suppressed_key = f"SIG-{case_node.key}-correlated_cluster_overlap";
+    if any([signal.key == suppressed_key for signal in signals]) {
+        return;
+    }
+    suppressed = (
+        case_node ++> ScamSignal(
+            key=suppressed_key,
+            category="correlated_cluster_overlap",
+            label="Recipient clustering repeated through device reuse",
+            weight=0.0,
+            severity=0.0,
+            contribution=0.0,
+            investigator="SkepticWalker",
+            rationale=(
+                "The recipient cluster and shared-device path describe the "
+                "same two-account mule network."
+            ),
+            supporting_graph_node_ids=[
+                "ACC-RAVEN-001", "DEV-RAVEN-7", "ACC-RAVEN-002"
+            ],
+            evidence_families=[
+                "transfer_ledger", "device_fingerprint"
+            ],
+            skeptic_disposition="suppressed",
+            skeptic_explanation=(
+                "Suppressed so recipient clustering and shared-device reuse "
+                "cannot count the same mule relationship twice."
+            )
+        )
+    )[0];
+    suppressed +>:INCLUDED_IN_CASE:+> case_node;
+    case_node +>:SUPPORTS_SIGNAL:+> suppressed;
+}
+
 def build_case_file(case_node: InvestigationCase, transfer: Transfer) -> str {
     signals = sorted(
         [case_node <-:INCLUDED_IN_CASE:<-][?:ScamSignal],
         key=lambda (signal: ScamSignal) { return -signal.contribution; }
     );
+    accepted = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "accepted"
+    ];
+    suppressed = [
+        signal for signal in signals
+        if signal.skeptic_disposition == "suppressed"
+    ];
     lines: list[str] = [
         f"# SafeWire Case File — {case_node.key}",
         "",
@@ -1103,11 +1209,24 @@ def build_case_file(case_node: InvestigationCase, transfer: Transfer) -> str {
         "## Independently corroborated signals",
         ""
     ];
-    for signal in signals {
+    for signal in accepted {
         lines.append(
             f"- **{signal.label} (+{signal.contribution:.0f})** — "
-            f"{signal.rationale}"
+            f"{signal.rationale}  \n"
+            f"  _Skeptic test:_ {signal.skeptic_explanation}"
         );
+    }
+    if suppressed {
+        lines.extend([
+            "",
+            "## Suppressed correlated clues",
+            ""
+        ]);
+        for signal in suppressed {
+            lines.append(
+                f"- **{signal.label}** — {signal.skeptic_explanation}"
+            );
+        }
     }
     lines.extend([
         "",
@@ -1207,6 +1326,7 @@ def graph_views(
         GraphEdgeView(id="TX-RUTH-4800|FORWARDED_TO|TX-RUTH-FORWARD-1", from_id="TX-RUTH-4800", to_id="TX-RUTH-FORWARD-1", label="FORWARDED", tone="flow"),
         GraphEdgeView(id="TX-RUTH-FORWARD-1|RECEIVED|MERCHANT-ARCLIGHT", from_id="TX-RUTH-FORWARD-1", to_id="MERCHANT-ARCLIGHT", label="RECEIVED", tone="flow"),
         GraphEdgeView(id="ACC-RAVEN-001|INCLUDED_IN_CASE|CASE-2026-041", from_id="ACC-RAVEN-001", to_id="CASE-2026-041", label="IN PRIOR CASE", tone="risk"),
+        GraphEdgeView(id="ACC-RAVEN-002|INCLUDED_IN_CASE|CASE-2026-041", from_id="ACC-RAVEN-002", to_id="CASE-2026-041", label="IN PRIOR CASE", tone="risk"),
         GraphEdgeView(id="TX-RUTH-4800|INCLUDED_IN_CASE|CASE-RUTH-4800", from_id="TX-RUTH-4800", to_id="CASE-RUTH-4800", label="INCLUDED IN CASE"),
         GraphEdgeView(id="CUST-JUNE|SENT|ACC-RAVEN-001", from_id="CUST-JUNE", to_id="ACC-RAVEN-001", label="$4,725", tone="risk"),
         GraphEdgeView(id="CUST-ARTHUR|SENT|ACC-RAVEN-001", from_id="CUST-ARTHUR", to_id="ACC-RAVEN-001", label="$4,950", tone="risk"),
@@ -1563,6 +1683,7 @@ walker:pub CreateDemoWorkspace {
         bayview_authorized +>:AUTHORIZED_ON:+> bayview_account;
         raven_one +>:SHARES_IDENTITY_WITH:+> raven_two;
         raven_one +>:INCLUDED_IN_CASE:+> prior_case;
+        raven_two +>:INCLUDED_IN_CASE:+> prior_case;
         ruth_transfer +>:INCLUDED_IN_CASE:+> ruth_case;
         harold_transfer +>:INCLUDED_IN_CASE:+> harold_case;
         report command_center_bundle("Seeded a fully synthetic fraud graph");
@@ -1891,6 +2012,7 @@ def:pub investigate_transfer_stream(
         if skeptic.result {
             case_node.skeptic_findings = skeptic.result.clearing_findings;
             case_node.cleared_by_skeptic = transfer_id == "TX-HAROLD-5200";
+            apply_skeptic_review(case_node, transfer);
             apply_result(case_node, skeptic.result);
             (skeptic_nodes, skeptic_edges) = delta_for_result(
                 transfer_id,

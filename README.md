@@ -1,8 +1,11 @@
 # SafeWire
 
-SafeWire helps community-bank fraud analysts stop suspicious transfers before an
-elder scammer moves the money, while preserving human review and the customer
-relationship.
+**Legacy systems score one transfer. SafeWire investigates the network behind
+it.**
+
+SafeWire helps community-bank fraud analysts stop suspicious transfers before
+an elder scammer moves the money, while preserving human review and the
+customer relationship.
 
 The demonstration is fully synthetic and works without API keys. Five
 specialized Jac investigators traverse separate paths through a persistent
@@ -13,10 +16,14 @@ before an intervention policy produces an analyst-facing recommendation.
 
 1. Run SafeWire and open [http://localhost:8000](http://localhost:8000).
 2. Select **Ruth Bennett** and click **Investigate transfer**.
-3. Watch real investigator results stream into the graph.
-4. Compare the measured parallel wall time with the sum of the five worker
-   times.
-5. Select **Harold Kim** and run the same investigation to see the skeptic clear
+3. Watch the exact evidence path assemble as real investigators finish:
+   Ruth's transfer → recipient account → shared device → linked recipient →
+   prior scam case, plus the downstream transfer → crypto off-ramp path.
+4. Inspect every signal's **Accepted** or **Suppressed** skeptic disposition and
+   the legitimate explanation that was tested.
+5. Compare measured parallel wall time with the sum of the five worker times,
+   then inspect the score and recommendation.
+6. Select **Harold Kim** and run the same investigation to see the skeptic clear
    a documented roofing payment.
 
 Expected outcomes:
